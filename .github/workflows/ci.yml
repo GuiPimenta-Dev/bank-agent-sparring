@@ -11,6 +11,21 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: sparring
+          POSTGRES_PASSWORD: sparring
+          POSTGRES_DB: sparring
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sparring"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      SPARRING_TEST_DATABASE_URL: postgresql+asyncpg://sparring:sparring@localhost:5432/sparring
     steps:
       - uses: actions/checkout@v7
         with:

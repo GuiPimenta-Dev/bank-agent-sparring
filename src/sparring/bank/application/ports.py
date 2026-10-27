@@ -5,7 +5,7 @@ from typing import Protocol, Self
 from sparring.bank.domain.card import Card, CardId
 from sparring.bank.domain.customer import Customer, CustomerId
 from sparring.bank.domain.dispute import Dispute
-from sparring.bank.domain.escalation import Escalation
+from sparring.bank.domain.escalation import Escalation, EscalationId
 from sparring.bank.domain.fee import Fee
 from sparring.bank.domain.pending_action import PendingAction, PendingActionId
 from sparring.bank.domain.transaction import Transaction, TransactionId
@@ -36,6 +36,8 @@ class PendingActionRepository(Protocol):
 
 
 class FeeRepository(Protocol):
+    async def list_for(self, customer_id: CustomerId) -> list[Fee]: ...
+
     async def add(self, fee: Fee) -> None: ...
 
 
@@ -52,6 +54,8 @@ class DisputeRepository(Protocol):
 
 
 class EscalationRepository(Protocol):
+    async def get(self, escalation_id: EscalationId) -> Escalation | None: ...
+
     async def add(self, escalation: Escalation) -> None: ...
 
 
