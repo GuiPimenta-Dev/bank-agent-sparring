@@ -14,6 +14,7 @@ class BankTools:
 
     Each conversation's Verified Session token is kept here, in the agent's process,
     and attached to the `_meta` of every call; it never enters the model's context.
+    A tool's artifact is the Hard Rule that refused the call, if one did.
     """
 
     def __init__(self, client: Client) -> None:
@@ -25,7 +26,7 @@ class BankTools:
         return [self._as_langchain_tool(tool) for tool in listed.tools]
 
     def _as_langchain_tool(self, tool: Tool) -> BaseTool:
-        async def call(config: RunnableConfig, **arguments: Any) -> str:
+        async def call(config: RunnableConfig, **arguments: Any) -> tuple[str, str | None]:
             conversation = str(config.get("configurable", {})["thread_id"])
             token = self._tokens.get(conversation)
             result = await self._client.call_tool(
@@ -34,13 +35,16 @@ class BankTools:
             issued = (result.meta or {}).get(SESSION_META_KEY)
             if isinstance(issued, str):
                 self._tokens[conversation] = issued
-            return "\n".join(
+            text = "\n".join(
                 block.text for block in result.content if isinstance(block, TextContent)
             )
+            rule = result.structured_content.get("rule") if result.structured_content else None
+            return text, rule if result.is_error and isinstance(rule, str) else None
 
         return StructuredTool.from_function(
             coroutine=call,
             name=tool.name,
             description=tool.description or "",
             args_schema=tool.input_schema,
+            response_format="content_and_artifact",
         )

@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage
 from mcp import Client
 
 from sparring.agent.support_agent import SupportAgent
+from sparring.bank.domain.card import CardId
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.recording import InMemoryRecorder
@@ -101,7 +102,7 @@ async def test_each_conversation_gets_its_own_bank() -> None:
     second = ScriptedSimulatedUser([UserMove("Bye", True)])
     conversation, _ = await runner([], second).run(scenario)
 
-    assert conversation.final.card(scenario.goal.intent.card_id).frozen_by is None
+    assert conversation.final.card(CardId("card-ana-debit")).frozen_by is None
 
 
 def report_lost_debit_card() -> Scenario:
@@ -173,3 +174,45 @@ async def test_a_careful_customer_rejects_the_wrong_action_and_the_agent_recover
 
     assert verdict.passed, verdict.differences
     assert any(turn.text.startswith("You rejected") for turn in conversation.transcript)
+
+
+async def test_a_confirmed_dispute_with_provisional_credit_passes() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Pret charged me for a cancelled order. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Confirmed, thanks.", True),
+        ],
+        answer_requests=True,
+    )
+    agent = [
+        VERIFY,
+        calls("list_transactions"),
+        calls("dispute_transaction", transaction_id="tx-ana-pret"),
+        says("You'll get £42.50 back while we investigate. Please confirm in your app."),
+    ]
+    scenario = load_scenario(CASES / "dispute-wrong-charge-applies-provisional-credit.json")
+
+    conversation, verdict = await runner(agent, user).run(scenario)
+
+    assert verdict.passed, verdict.differences
+    assert conversation.hard_rule_refusals == []
+
+
+async def test_the_conversation_keeps_the_hard_rules_that_refused_the_agent() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Dispute my Ticketline payment. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Ok, bye.", True),
+        ]
+    )
+    agent = [
+        VERIFY,
+        calls("dispute_transaction", transaction_id="tx-ana-ticketline"),
+        says("That payment is still pending; please come back once it has settled."),
+    ]
+    scenario = load_scenario(CASES / "dispute-pending-transaction-changes-nothing.json")
+
+    conversation, verdict = await runner(agent, user).run(scenario)
+
+    assert verdict.passed, verdict.differences
+    assert conversation.hard_rule_refusals == ["TransactionPending"]

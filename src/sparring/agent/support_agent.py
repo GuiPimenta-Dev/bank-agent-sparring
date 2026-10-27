@@ -6,7 +6,7 @@ from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariab
 from langchain_anthropic import ChatAnthropic
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
@@ -20,6 +20,8 @@ POLICY = (Path(__file__).parent / "policy.md").read_text()
 @dataclass(frozen=True)
 class AgentTurn:
     reply: str
+    hard_rule_refusals: list[str]
+    """The Hard Rules that refused the agent's tool calls in this turn, in order."""
 
 
 class SupportAgent:
@@ -65,4 +67,11 @@ class SupportAgent:
             "metadata": {"langfuse_session_id": conversation_id},
         }
         state = await self._graph.ainvoke({"messages": [HumanMessage(message)]}, config=config)
-        return AgentTurn(state["messages"][-1].text)
+        messages: list[BaseMessage] = state["messages"]
+        turn_start = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
+        refusals = [
+            m.artifact
+            for m in messages[turn_start:]
+            if isinstance(m, ToolMessage) and isinstance(m.artifact, str)
+        ]
+        return AgentTurn(messages[-1].text, refusals)

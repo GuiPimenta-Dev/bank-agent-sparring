@@ -3,10 +3,10 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
-from mcp_types import CallToolResult, RequestParamsMeta
+from mcp_types import CallToolResult, RequestParamsMeta, TextContent
 
 from sparring.bank.adapters.clock import FixedClock
-from sparring.bank.adapters.in_memory import InMemoryBank
+from sparring.bank.adapters.in_memory import InMemoryBank, InMemoryUnitOfWork
 from sparring.bank.adapters.mcp_server import SESSION_META_KEY, SessionTokens, build_mcp_server
 from sparring.bank.application.bank import Bank
 from sparring.bank.domain.card import Card, CardId, FreezeSource
@@ -128,4 +128,39 @@ async def test_no_tool_exposes_a_customer_id_or_the_session_token() -> None:
         "card_id",
         "reason",
         "pending_action_id",
+        "transaction_id",
     }
+
+
+async def test_verification_tells_the_agent_the_customers_tier() -> None:
+    async with Client(kestrel()) as client:
+        result = await client.call_tool("verify_identity", ANA_DETAILS)
+
+    assert result.structured_content == {"verified": True, "tier": "standard"}
+
+
+async def test_invalid_arguments_tell_the_model_what_to_fix() -> None:
+    async with Client(kestrel(ANA_DEBIT)) as client:
+        session = await verify(client)
+        result = await client.call_tool(
+            "report_lost_or_stolen",
+            {"card_id": "card-ana-debit", "reason": "misplaced"},
+            meta=session,
+        )
+
+    assert result.is_error
+    text = result.content[0].text if isinstance(result.content[0], TextContent) else ""
+    assert "reason" in text and "'lost' or 'stolen'" in text
+
+
+async def test_an_unexpected_failure_reaches_the_model_without_internals() -> None:
+    def broken_unit_of_work() -> InMemoryUnitOfWork:
+        raise RuntimeError("connection to postgres://bank:hunter2@db failed")
+
+    clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+    server = build_mcp_server(Bank(broken_unit_of_work, clock), SessionTokens(b"secret"), clock)
+    async with Client(server) as client:
+        result = await client.call_tool("verify_identity", ANA_DETAILS)
+
+    assert result.is_error
+    assert result.content == [TextContent(type="text", text="Error executing tool verify_identity")]

@@ -25,7 +25,11 @@ class Recorder(Protocol):
 
 
 class LangfuseRecorder:
-    """One Langfuse trace per conversation; the agent's turns nest inside it."""
+    """One Langfuse trace per conversation; the agent's turns nest inside it.
+
+    Each Hard Rule refusal is a categorical score named after the rule, so refusals
+    can be counted per rule across conversations (ADR-0017).
+    """
 
     def __init__(self, langfuse: Langfuse, metadata: Mapping[str, str]) -> None:
         self._langfuse = langfuse
@@ -51,11 +55,16 @@ class LangfuseRecorder:
                 "transcript": [asdict(turn) for turn in conversation.transcript],
                 "differences": verdict.differences,
                 "reached_turn_limit": conversation.reached_turn_limit,
+                "hard_rule_refusals": conversation.hard_rule_refusals,
             }
         )
         self._langfuse.score_current_trace(
             name="oracle_pass", value=1 if verdict.passed else 0, data_type="BOOLEAN"
         )
+        for rule in conversation.hard_rule_refusals:
+            self._langfuse.score_current_trace(
+                name="hard_rule_refusal", value=rule, data_type="CATEGORICAL"
+            )
 
 
 class InMemoryRecorder:

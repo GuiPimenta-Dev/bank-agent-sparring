@@ -31,6 +31,10 @@ class SystemUnderTest(Protocol):
 
     def bank_snapshot(self) -> BankSnapshot: ...
 
+    def hard_rule_refusals(self) -> list[str]:
+        """The Hard Rules that refused the agent's tool calls so far, in order."""
+        ...
+
 
 SystemFactory = Callable[[Scenario, str], AbstractAsyncContextManager[SystemUnderTest]]
 """Sets up the system under test for a Scenario and a conversation id."""
@@ -43,6 +47,7 @@ class Conversation:
     transcript: list[Turn]
     final: BankSnapshot
     reached_turn_limit: bool
+    hard_rule_refusals: list[str]
 
 
 class ScenarioRunner:
@@ -110,5 +115,10 @@ class ScenarioRunner:
         reached_turn_limit: bool,
     ) -> Conversation:
         return Conversation(
-            conversation_id, scenario, transcript, system.bank_snapshot(), reached_turn_limit
+            conversation_id,
+            scenario,
+            transcript,
+            system.bank_snapshot(),
+            reached_turn_limit,
+            system.hard_rule_refusals(),
         )

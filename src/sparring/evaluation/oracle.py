@@ -1,10 +1,11 @@
 import copy
 from dataclasses import dataclass
 
-from sparring.bank.domain.card import FreezeSource
+from sparring.bank.domain.card import FreezeSource, LossReason
+from sparring.bank.domain.dispute import open_dispute
 from sparring.bank.domain.lost_or_stolen_report import execute_lost_or_stolen_report
 from sparring.bank.domain.refusals import HardRuleRefusal
-from sparring.evaluation.scenario import BankSnapshot, Scenario
+from sparring.evaluation.scenario import BankSnapshot, Intent, Scenario
 
 
 @dataclass(frozen=True)
@@ -22,20 +23,27 @@ class Oracle:
 
     def expected_outcome(self, scenario: Scenario) -> BankSnapshot:
         expected = copy.deepcopy(scenario.bank)
-        intent = scenario.goal.intent
-        card = expected.card(intent.card_id)
         try:
-            match intent.operation:
-                case "freeze_card":
-                    card.freeze(FreezeSource.CUSTOMER)
-                case "unfreeze_card":
-                    card.unfreeze(FreezeSource.CUSTOMER)
-                case "report_lost_or_stolen":
-                    assert intent.reason is not None, "validated when the Scenario is loaded"
+            match scenario.goal.intent:
+                case Intent("freeze_card", str() as card_id):
+                    expected.card(card_id).freeze(FreezeSource.CUSTOMER)
+                case Intent("unfreeze_card", str() as card_id):
+                    expected.card(card_id).unfreeze(FreezeSource.CUSTOMER)
+                case Intent("report_lost_or_stolen", str() as card_id, LossReason() as reason):
+                    card = expected.card(card_id)
                     customer = expected.customer(card.customer_id)
-                    replacement, fee = execute_lost_or_stolen_report(card, customer, intent.reason)
+                    replacement, fee = execute_lost_or_stolen_report(card, customer, reason)
                     expected.cards.append(replacement)
                     expected.fees.extend([fee] if fee else [])
+                case Intent("dispute_transaction", transaction_id=str() as transaction_id):
+                    transaction = expected.transaction(transaction_id)
+                    customer = expected.customer(transaction.customer_id)
+                    dispute = open_dispute(transaction, customer, expected.disputes, scenario.now)
+                    expected.disputes.append(dispute)
+                case intent:
+                    raise ValueError(
+                        f"Scenario {scenario.id}: an Intent the loader rejects: {intent}"
+                    )
         except HardRuleRefusal:
             return copy.deepcopy(scenario.bank)
         return expected

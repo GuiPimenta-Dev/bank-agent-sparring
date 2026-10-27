@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime
 
 import pytest
-from fakes import ScriptedModel, calls
+from fakes import ScriptedModel, calls, says, scripted
 from langchain_core.messages import AIMessage
 from mcp import Client
 
@@ -71,3 +71,31 @@ async def test_a_verified_session_does_not_leak_into_another_conversation() -> N
         await agent.reply("someone-else", "freeze card-ana-debit")
 
     assert bank.state.cards[ANA_DEBIT].frozen_by is None
+
+
+async def test_each_turn_reports_the_hard_rules_that_refused_it() -> None:
+    fraud_frozen = Card(ANA_DEBIT, ANA.id, "4242", FreezeSource.FRAUD_TEAM)
+    bank = InMemoryBank([ANA], [fraud_frozen])
+    clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+    server = build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"), clock)
+    script = [
+        calls(
+            "verify_identity",
+            customer_number="C-1001",
+            date_of_birth="1990-05-17",
+            postcode="SW1A 1AA",
+        ),
+        calls("unfreeze_card", card_id=ANA_DEBIT),
+        says("Only our fraud team can lift that freeze."),
+        says("Anything else?"),
+    ]
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(client, scripted(*script))
+        first = await agent.reply(
+            "conversation-1", "Unfreeze my card. C-1001, 1990-05-17, SW1A 1AA"
+        )
+        second = await agent.reply("conversation-1", "Oh, ok.")
+
+    assert first.hard_rule_refusals == ["FraudFreezeLocked"]
+    assert second.hard_rule_refusals == []

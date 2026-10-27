@@ -1,0 +1,106 @@
+{
+  "id": "dispute-at-premium-provisional-credit-limit",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-2002",
+        "full_name": "Ben Okafor",
+        "date_of_birth": "1984-01-02",
+        "postcode": "M1 1AE",
+        "tier": "premium"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ben-debit",
+        "customer_id": "C-2002",
+        "last_four": "1881",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ben-apple",
+        "customer_id": "C-2002",
+        "card_id": "card-ben-debit",
+        "merchant": "Apple Store",
+        "amount": "1000.00",
+        "currency": "GBP",
+        "settled_on": "2026-10-14"
+      }
+    ],
+    "disputes": []
+  },
+  "persona": {
+    "name": "Ben Okafor",
+    "customer_id": "C-2002",
+    "temperament": "calm and careful: you read what the app asks before confirming",
+    "patience": 6,
+    "facts": {
+      "customer number": "C-2002",
+      "date of birth": "1984-01-02",
+      "postcode": "M1 1AE",
+      "debit card": "ends in 1881",
+      "the wrong payment": "£1,000.00 to Apple Store, 14 October"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "dispute_transaction",
+      "transaction_id": "tx-ben-apple"
+    },
+    "narrative": "The Apple Store charged your debit card £1,000.00 on 14 October for a phone you returned unopened, and the refund never came. You want that payment disputed. You still have your card and it is safe. Confirm the request in your app if it matches."
+  },
+  "dimensions": {
+    "operation": "dispute_transaction",
+    "tier": "premium",
+    "transaction_state": "settled",
+    "transaction_age_days": "12",
+    "amount_band": "at_limit",
+    "policy_rule": "DS-5"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-2002",
+        "full_name": "Ben Okafor",
+        "date_of_birth": "1984-01-02",
+        "postcode": "M1 1AE",
+        "tier": "premium"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ben-debit",
+        "customer_id": "C-2002",
+        "last_four": "1881",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ben-apple",
+        "customer_id": "C-2002",
+        "card_id": "card-ben-debit",
+        "merchant": "Apple Store",
+        "amount": "1000.00",
+        "currency": "GBP",
+        "settled_on": "2026-10-14"
+      }
+    ],
+    "disputes": [
+      {
+        "id": "dispute-tx-ben-apple",
+        "customer_id": "C-2002",
+        "transaction_id": "tx-ben-apple",
+        "provisional_credit": "1000.00",
+        "currency": "GBP"
+      }
+    ]
+  }
+}

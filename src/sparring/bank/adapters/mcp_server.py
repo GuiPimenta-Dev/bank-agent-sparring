@@ -11,6 +11,7 @@ import hmac
 import json
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Final, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -20,9 +21,10 @@ from pydantic import BaseModel, Field
 from sparring.bank.application.bank import Bank
 from sparring.bank.application.ports import Clock
 from sparring.bank.domain.card import Card, CardId, LossReason
-from sparring.bank.domain.customer import CustomerId, IdentityClaim
+from sparring.bank.domain.customer import CustomerId, IdentityClaim, Tier
 from sparring.bank.domain.pending_action import PendingAction, PendingActionId, PendingActionStatus
 from sparring.bank.domain.refusals import HardRuleRefusal, IdentityNotVerified
+from sparring.bank.domain.transaction import Transaction, TransactionId
 from sparring.bank.domain.verified_session import VerifiedSession
 
 SESSION_META_KEY: Final = "bank.kestrel/verified-session"
@@ -78,6 +80,28 @@ class CardView(BaseModel):
         )
 
 
+class TransactionView(BaseModel):
+    transaction_id: str
+    card_id: str
+    merchant: str
+    amount: Decimal
+    currency: str
+    status: Literal["pending", "settled"]
+    settled_on: date | None
+
+    @classmethod
+    def of(cls, transaction: Transaction) -> "TransactionView":
+        return cls(
+            transaction_id=transaction.id,
+            card_id=transaction.card_id,
+            merchant=transaction.merchant,
+            amount=transaction.amount.amount,
+            currency=transaction.amount.currency,
+            status="settled" if transaction.settled_on else "pending",
+            settled_on=transaction.settled_on,
+        )
+
+
 class PendingActionView(BaseModel):
     pending_action_id: str
     status: Literal["awaiting_confirmation", "confirmed", "rejected", "expired"]
@@ -111,6 +135,10 @@ class CardList(BaseModel):
     cards: list[CardView]
 
 
+class TransactionList(BaseModel):
+    transactions: list[TransactionView]
+
+
 class Refusal(BaseModel):
     refused: Literal[True] = True
     rule: str
@@ -119,6 +147,7 @@ class Refusal(BaseModel):
 
 class Verified(BaseModel):
     verified: Literal[True] = True
+    tier: Tier
 
 
 def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServer:
@@ -134,8 +163,10 @@ def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServ
             raise IdentityNotVerified()
         return tokens.read(token)
 
-    async def issued(session: Awaitable[VerifiedSession]) -> CallToolResult:
-        return _result(Verified(), meta={SESSION_META_KEY: tokens.issue(await session)})
+    async def issued(verification: Awaitable[VerifiedSession]) -> CallToolResult:
+        session = await verification
+        customer = await bank.customer(session)
+        return _result(Verified(tier=customer.tier), meta={SESSION_META_KEY: tokens.issue(session)})
 
     @server.tool()
     async def verify_identity(
@@ -183,6 +214,28 @@ def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServ
         )
 
     @server.tool()
+    async def list_transactions(ctx: Context[Any, Any]) -> CallToolResult:
+        """List the verified Customer's card transactions, pending or settled."""
+        return await _answered(lambda: _transactions(bank.list_transactions(session_of(ctx))))
+
+    @server.tool()
+    async def dispute_transaction(
+        transaction_id: Annotated[
+            str, Field(description="The transaction's id, as returned by list_transactions.")
+        ],
+        ctx: Context[Any, Any],
+    ) -> CallToolResult:
+        """Request a Dispute of a settled transaction the Customer says is wrong or did not
+        authorize, with Provisional Credit if the Policy grants it.
+
+        Nothing happens until the Customer confirms it in the Kestrel Bank app; you cannot
+        confirm it for them. Use get_pending_action to see whether they have.
+        """
+        return await _answered(
+            lambda: action(bank.request_dispute(session_of(ctx), TransactionId(transaction_id)))
+        )
+
+    @server.tool()
     async def get_pending_action(
         pending_action_id: Annotated[str, Field(description="As returned when it was requested.")],
         ctx: Context[Any, Any],
@@ -212,6 +265,11 @@ async def _card(card: Awaitable[Card]) -> CallToolResult:
 
 async def _cards(cards: Awaitable[list[Card]]) -> CallToolResult:
     return _result(CardList(cards=[CardView.of(card) for card in await cards]))
+
+
+async def _transactions(transactions: Awaitable[list[Transaction]]) -> CallToolResult:
+    views = [TransactionView.of(transaction) for transaction in await transactions]
+    return _result(TransactionList(transactions=views))
 
 
 def _result(

@@ -7,8 +7,10 @@ from typing import Self
 
 from sparring.bank.domain.card import Card, CardId
 from sparring.bank.domain.customer import Customer, CustomerId
+from sparring.bank.domain.dispute import Dispute, DisputeId
 from sparring.bank.domain.fee import Fee, FeeId
 from sparring.bank.domain.pending_action import PendingAction, PendingActionId
+from sparring.bank.domain.transaction import Transaction, TransactionId
 
 
 @dataclass
@@ -19,6 +21,10 @@ class BankState:
         default_factory=dict[PendingActionId, PendingAction]
     )
     fees: dict[FeeId, Fee] = field(default_factory=dict[FeeId, Fee])
+    transactions: dict[TransactionId, Transaction] = field(
+        default_factory=dict[TransactionId, Transaction]
+    )
+    disputes: dict[DisputeId, Dispute] = field(default_factory=dict[DisputeId, Dispute])
 
 
 class InMemoryBank:
@@ -32,11 +38,15 @@ class InMemoryBank:
         customers: Iterable[Customer] = (),
         cards: Iterable[Card] = (),
         fees: Iterable[Fee] = (),
+        transactions: Iterable[Transaction] = (),
+        disputes: Iterable[Dispute] = (),
     ) -> None:
         self.state = BankState(
             customers={c.id: c for c in customers},
             cards={c.id: c for c in cards},
             fees={f.id: f for f in fees},
+            transactions={t.id: t for t in transactions},
+            disputes={d.id: d for d in disputes},
         )
         self.lock = asyncio.Lock()
 
@@ -49,6 +59,8 @@ class InMemoryUnitOfWork:
     cards: "InMemoryCardRepository"
     pending_actions: "InMemoryPendingActionRepository"
     fees: "InMemoryFeeRepository"
+    transactions: "InMemoryTransactionRepository"
+    disputes: "InMemoryDisputeRepository"
 
     def __init__(self, bank: InMemoryBank) -> None:
         self._bank = bank
@@ -61,6 +73,8 @@ class InMemoryUnitOfWork:
         self.cards = InMemoryCardRepository(self._working.cards)
         self.pending_actions = InMemoryPendingActionRepository(self._working.pending_actions)
         self.fees = InMemoryFeeRepository(self._working.fees)
+        self.transactions = InMemoryTransactionRepository(self._working.transactions)
+        self.disputes = InMemoryDisputeRepository(self._working.disputes)
         return self
 
     async def __aexit__(
@@ -117,3 +131,25 @@ class InMemoryFeeRepository:
 
     async def add(self, fee: Fee) -> None:
         self._fees[fee.id] = fee
+
+
+class InMemoryTransactionRepository:
+    def __init__(self, transactions: dict[TransactionId, Transaction]) -> None:
+        self._transactions = transactions
+
+    async def get(self, transaction_id: TransactionId) -> Transaction | None:
+        return self._transactions.get(transaction_id)
+
+    async def list_for(self, customer_id: CustomerId) -> list[Transaction]:
+        return [t for t in self._transactions.values() if t.customer_id == customer_id]
+
+
+class InMemoryDisputeRepository:
+    def __init__(self, disputes: dict[DisputeId, Dispute]) -> None:
+        self._disputes = disputes
+
+    async def list_for(self, customer_id: CustomerId) -> list[Dispute]:
+        return [d for d in self._disputes.values() if d.customer_id == customer_id]
+
+    async def add(self, dispute: Dispute) -> None:
+        self._disputes[dispute.id] = dispute
