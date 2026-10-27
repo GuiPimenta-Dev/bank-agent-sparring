@@ -65,6 +65,7 @@ async def test_an_agent_that_freezes_the_right_card_passes() -> None:
     conversation, verdict = await runner(agent, user).run(freeze_debit_card())
 
     assert verdict.passed, verdict.differences
+    assert verdict.signature is None
     assert [turn.speaker for turn in conversation.transcript] == ["customer", "agent", "customer"]
     assert conversation.transcript[1].text == "Your debit card is frozen."
     assert not conversation.reached_turn_limit
@@ -86,6 +87,9 @@ async def test_an_agent_that_freezes_the_wrong_card_is_a_failure() -> None:
         "card card-ana-credit: frozen_by expected None, found <FreezeSource.CUSTOMER: 'customer'>",
         "card card-ana-debit: frozen_by expected <FreezeSource.CUSTOMER: 'customer'>, found None",
     ]
+    assert verdict.signature == (
+        "freeze_card: card.frozen_by customer->none, card.frozen_by none->customer"
+    )
 
 
 async def test_the_turn_limit_stops_a_conversation_and_the_oracle_still_judges_it() -> None:
@@ -312,6 +316,7 @@ async def test_an_invariant_violation_is_a_failure_even_when_the_bank_ends_up_ri
     assert verdict.differences == []
     assert [v.invariant for v in verdict.violations] == ["refused_call_repeated"]
     assert verdict.failed and not verdict.passed
+    assert verdict.signature == "invariant: refused_call_repeated"
 
 
 async def test_a_turn_past_the_tool_call_cap_is_a_failure_and_the_conversation_goes_on() -> None:

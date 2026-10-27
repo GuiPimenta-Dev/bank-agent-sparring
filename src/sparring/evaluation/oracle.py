@@ -9,7 +9,7 @@ from sparring.bank.domain.lost_or_stolen_report import execute_lost_or_stolen_re
 from sparring.bank.domain.money import Money
 from sparring.bank.domain.refusals import FraudFreezeLocked, HardRuleRefusal
 from sparring.bank.domain.transaction import Transaction, TransactionId
-from sparring.evaluation.scenario import BankSnapshot, Intent, Scenario
+from sparring.evaluation.scenario import BankSnapshot, Difference, Intent, Scenario
 
 ESCALATION_THRESHOLD = Money(Decimal("2000.00"))
 UNRECOGNISED_TRANSACTIONS_TO_ESCALATE = 3
@@ -53,9 +53,9 @@ class Oracle:
             return copy.deepcopy(scenario.bank)
         return expected
 
-    def differences(self, scenario: Scenario, final: BankSnapshot) -> list[str]:
+    def compare(self, scenario: Scenario, final: BankSnapshot) -> list[Difference]:
         """How the final Bank Snapshot differs from the Expected Outcome; none means correct."""
-        return self.expected_outcome(scenario).differences(final)
+        return self.expected_outcome(scenario).compare(final)
 
 
 def _dispute(

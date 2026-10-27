@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
+from random import Random
 
 import pytest
 
-from sparring.evaluation.scenario import load_scenario
+from sparring.evaluation.dimensions import draft, sample_dimensions
+from sparring.evaluation.scenario import load_scenario, scenario_from_json, scenario_to_json
 from sparring.evaluation.simulated_user import Turn, as_input
 
 CASE = Path(__file__).parents[2] / "canonical_cases" / "freeze-active-debit-card.json"
@@ -59,3 +61,14 @@ def test_a_scenario_starts_before_any_escalation(tmp_path: Path) -> None:
     bank = {**json.loads(CASE.read_text())["bank"], "escalated": True}
     with pytest.raises(ValueError, match="before any Escalation"):
         load_scenario(write(tmp_path, {"bank": bank}))
+
+
+def test_a_scenario_survives_its_json_form_unchanged() -> None:
+    cases = sorted((Path(__file__).parents[2] / "canonical_cases").glob("*.json"))
+    drafts = [
+        draft(f"d-{seed}", sample_dimensions(Random(seed)), Random(seed)) for seed in range(50)
+    ]
+    scenarios = [load_scenario(path) for path in cases] + [d.scenario("A story.") for d in drafts]
+
+    for scenario in scenarios:
+        assert scenario_from_json(scenario_to_json(scenario)) == scenario, scenario.id

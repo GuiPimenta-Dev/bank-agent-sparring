@@ -10,9 +10,11 @@ from sparring.agent.support_agent import SupportAgent
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.cost import Budget, Price, PriceTable, Usage
 from sparring.evaluation.exploration import Exploration
+from sparring.evaluation.golden_set import InMemoryGoldenSet
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.narrative import NarrativeModel, Story
 from sparring.evaluation.oracle import Oracle
+from sparring.evaluation.promotion import Promotion
 from sparring.evaluation.recording import InMemoryRecorder
 from sparring.evaluation.simulated_user import Turn, UserMove
 from sparring.system_under_test import kestrel
@@ -63,27 +65,37 @@ def exploration(
     user: LeavingUser | None = None,
     parallelism: int = 1,
     recorder: InMemoryRecorder | None = None,
+    golden_set: InMemoryGoldenSet | None = None,
 ) -> Exploration:
     async def connect_agent(client: Client) -> SupportAgent:
         return await SupportAgent.with_model(client, scripted(says("How can I help?")))
 
+    recorder = recorder or InMemoryRecorder()
     runner = ScenarioRunner(
-        kestrel(connect_agent, "scripted"),
-        user or LeavingUser(),
-        Oracle(),
-        recorder or InMemoryRecorder(),
+        kestrel(connect_agent, "scripted"), user or LeavingUser(), Oracle(), recorder
     )
-    return Exploration(runner, narrator, PRICES, parallelism)
+    promotion = Promotion(golden_set or InMemoryGoldenSet(), Oracle(), recorder)
+    return Exploration(runner, narrator, promotion, PRICES, parallelism)
 
 
 async def test_the_budget_stops_launching_conversations_before_the_cap() -> None:
-    budget = Budget(cap=Decimal("0.20"), estimate=Decimal("0.10"))
+    budget = Budget(cap=Decimal("0.50"), estimate=Decimal("0.10"))
+
+    report = await exploration(Narrator()).run("run", 20, budget, seed=1)
+
+    assert report.explored and report.not_launched
+    assert report.spent <= report.cap
+    assert sum(e.cost for e in report.explored) == report.spent
+
+
+async def test_a_conversation_costs_its_story_its_moves_and_its_reproductions() -> None:
+    budget = Budget(cap=Decimal(10), estimate=Decimal("0.10"))
 
     report = await exploration(Narrator()).run("run", 10, budget, seed=1)
 
-    assert len(report.explored) == 2 and report.not_launched == 8
-    assert [e.cost for e in report.explored] == [STORY_COST + MOVE_COST] * 2
-    assert report.spent == 2 * (STORY_COST + MOVE_COST) <= report.cap
+    for explored in report.explored:
+        reproductions = 1 if explored.promotion == "promoted" else 0
+        assert explored.cost == STORY_COST + MOVE_COST * (1 + reproductions)
 
 
 async def test_conversations_run_concurrently_but_never_more_than_the_parallelism() -> None:
@@ -133,7 +145,17 @@ async def test_the_report_counts_outcomes_and_the_cost_per_resolved_conversation
     assert report.cost_per_resolved_conversation == report.spent / passes
     for explored in report.explored:
         if explored.outcome == "failure":
-            assert explored.findings
+            assert explored.findings and explored.promotion
     traced = {conversation.scenario.id: conversation for conversation, _ in recorder.records}
     for explored in report.explored:
         assert traced[explored.scenario_id].scenario.dimensions == explored.dimensions
+
+
+async def test_failures_found_by_exploration_grow_the_golden_set() -> None:
+    golden_set = InMemoryGoldenSet()
+    budget = Budget(cap=Decimal(10), estimate=Decimal("0.10"))
+
+    report = await exploration(Narrator(), golden_set=golden_set).run("run", 20, budget, seed=5)
+
+    promoted = {e.scenario_id for e in report.explored if e.promotion == "promoted"}
+    assert promoted == {item.scenario.id for item in await golden_set.items()}

@@ -35,10 +35,16 @@ Run one Scenario (or Canonical Case) end-to-end with the real agent and Simulate
 uv run --env-file .env sparring-run-scenario canonical_cases/freeze-active-debit-card.json
 ```
 
-Explore: generate Scenarios from sampled Dimensions and run them under a hard dollar cap. It shows an estimate and asks before starting. A paid run, so only with the user's approval of its cap:
+Explore: generate Scenarios from sampled Dimensions and run them under a hard dollar cap; Failures are Reproduced and promoted into the Golden Set. It shows an estimate and asks before starting. A paid run, so only with the user's approval of its cap:
 
 ```bash
 uv run --env-file .env sparring-explore --scenarios 20 --max-cost 1.00
+```
+
+Failure Signatures by frequency over the last days, with each one's share of the Golden Set. It reads Langfuse only and calls no LLM:
+
+```bash
+uv run --env-file .env sparring-failures --days 7
 ```
 
 ## Delivering a slice

@@ -40,36 +40,63 @@ class BankSnapshot:
 
     def differences(self, actual: "BankSnapshot") -> list[str]:
         """What `actual` does not share with this snapshot, one line per difference."""
-        lines = _differences("card", self.cards, actual.cards)
-        lines += _differences("fee", self.fees, actual.fees)
-        lines += _differences("transaction", self.transactions, actual.transactions)
-        lines += _differences("dispute", self.disputes, actual.disputes)
+        return [str(difference) for difference in self.compare(actual)]
+
+    def compare(self, actual: "BankSnapshot") -> list["Difference"]:
+        found = _differences("card", self.cards, actual.cards)
+        found += _differences("fee", self.fees, actual.fees)
+        found += _differences("transaction", self.transactions, actual.transactions)
+        found += _differences("dispute", self.disputes, actual.disputes)
         if self.customers != actual.customers:
-            lines.append("customers differ")
+            found.append(Difference("customers", None, None, None, None))
         if self.escalated != actual.escalated:
-            lines.append(f"escalated: expected {self.escalated}, found {actual.escalated}")
-        return lines
+            found.append(Difference("escalated", None, None, self.escalated, actual.escalated))
+        return found
+
+
+@dataclass(frozen=True)
+class Difference:
+    """One way a Bank Snapshot differs from the expected one: a field of one item, or a
+    whole item (`field` is None) that is missing or should not be there."""
+
+    kind: str
+    item_id: str | None
+    field: str | None
+    expected: Any
+    found: Any
+
+    def __str__(self) -> str:
+        if self.kind == "customers":
+            return "customers differ"
+        if self.kind == "escalated":
+            return f"escalated: expected {self.expected}, found {self.found}"
+        if self.field is None:
+            return f"{self.kind} {self.item_id}: expected {self.expected}, found {self.found}"
+        return (
+            f"{self.kind} {self.item_id}: {self.field} expected {self.expected!r}, "
+            f"found {self.found!r}"
+        )
 
 
 def _differences(
     kind: str,
     expected: Sequence[Card | Fee | Transaction | Dispute],
     actual: Sequence[Card | Fee | Transaction | Dispute],
-) -> list[str]:
+) -> list[Difference]:
     expected_by_id: dict[str, dict[str, Any]] = {item.id: asdict(item) for item in expected}
     actual_by_id: dict[str, dict[str, Any]] = {item.id: asdict(item) for item in actual}
-    lines: list[str] = []
+    found: list[Difference] = []
     for item_id in sorted(expected_by_id.keys() | actual_by_id.keys()):
-        wanted, found = expected_by_id.get(item_id), actual_by_id.get(item_id)
-        if wanted is None or found is None:
-            lines.append(f"{kind} {item_id}: expected {wanted}, found {found}")
+        wanted, there = expected_by_id.get(item_id), actual_by_id.get(item_id)
+        if wanted is None or there is None:
+            found.append(Difference(kind, item_id, None, wanted, there))
             continue
-        lines += [
-            f"{kind} {item_id}: {field} expected {value!r}, found {found[field]!r}"
+        found += [
+            Difference(kind, item_id, field, value, there[field])
             for field, value in wanted.items()
-            if found[field] != value
+            if there[field] != value
         ]
-    return lines
+    return found
 
 
 @dataclass(frozen=True)
@@ -115,6 +142,19 @@ class Scenario:
 
 def load_scenario(path: Path) -> Scenario:
     return _ScenarioFile.model_validate_json(path.read_text()).to_scenario()
+
+
+def scenario_to_json(scenario: Scenario) -> dict[str, Any]:
+    """The Scenario as the JSON a Scenario file holds; `scenario_from_json` reads it back."""
+    return _ScenarioFile.of(scenario).model_dump(mode="json", exclude_none=True)
+
+
+def scenario_from_json(data: Mapping[str, Any]) -> Scenario:
+    return _ScenarioFile.model_validate(data).to_scenario()
+
+
+def snapshot_to_json(snapshot: BankSnapshot) -> dict[str, Any]:
+    return _BankFile.of(snapshot).model_dump(mode="json", exclude_none=True)
 
 
 def load_canonical_case(path: Path) -> tuple[Scenario, BankSnapshot]:
@@ -181,6 +221,67 @@ class _BankFile(BaseModel):
     transactions: list[_TransactionFile] = Field(default_factory=list[_TransactionFile])
     disputes: list[_DisputeFile] = Field(default_factory=list[_DisputeFile])
     escalated: bool = False
+
+    @classmethod
+    def of(cls, snapshot: BankSnapshot) -> "_BankFile":
+        return cls(
+            customers=[
+                _CustomerFile(
+                    id=c.id,
+                    full_name=c.full_name,
+                    date_of_birth=c.date_of_birth,
+                    postcode=c.postcode,
+                    tier=c.tier,
+                )
+                for c in snapshot.customers
+            ],
+            cards=[
+                _CardFile(
+                    id=c.id,
+                    customer_id=c.customer_id,
+                    last_four=c.last_four,
+                    frozen_by=c.frozen_by,
+                    cancelled_because=c.cancelled_because,
+                    replaces=c.replaces,
+                )
+                for c in snapshot.cards
+            ],
+            fees=[
+                _FeeFile(
+                    id=f.id,
+                    customer_id=f.customer_id,
+                    amount=f.amount.amount,
+                    currency=f.amount.currency,
+                    reason=f.reason,
+                )
+                for f in snapshot.fees
+            ],
+            transactions=[
+                _TransactionFile(
+                    id=t.id,
+                    customer_id=t.customer_id,
+                    card_id=t.card_id,
+                    merchant=t.merchant,
+                    amount=t.amount.amount,
+                    currency=t.amount.currency,
+                    settled_on=t.settled_on,
+                )
+                for t in snapshot.transactions
+            ],
+            disputes=[
+                _DisputeFile(
+                    id=d.id,
+                    customer_id=d.customer_id,
+                    transaction_id=d.transaction_id,
+                    provisional_credit=d.provisional_credit.amount
+                    if d.provisional_credit
+                    else None,
+                    currency=d.provisional_credit.currency if d.provisional_credit else "GBP",
+                )
+                for d in snapshot.disputes
+            ],
+            escalated=snapshot.escalated,
+        )
 
     def to_snapshot(self) -> BankSnapshot:
         return BankSnapshot(
@@ -262,6 +363,33 @@ class _ScenarioFile(BaseModel):
     goal: _GoalFile
     dimensions: dict[str, str] = Field(default_factory=dict[str, str])
     expected_outcome: _BankFile | None = None
+
+    @classmethod
+    def of(cls, scenario: Scenario) -> "_ScenarioFile":
+        persona, intent = scenario.persona, scenario.goal.intent
+        return cls(
+            id=scenario.id,
+            now=scenario.now,
+            bank=_BankFile.of(scenario.bank),
+            persona=_PersonaFile(
+                name=persona.name,
+                customer_id=persona.customer_id,
+                temperament=persona.temperament,
+                patience=persona.patience,
+                facts=dict(persona.facts),
+            ),
+            goal=_GoalFile(
+                intent=_IntentFile(
+                    operation=intent.operation,
+                    card_id=intent.card_id,
+                    reason=intent.reason,
+                    transaction_ids=list(intent.transaction_ids),
+                    unrecognised=intent.unrecognised,
+                ),
+                narrative=scenario.goal.narrative,
+            ),
+            dimensions=dict(scenario.dimensions),
+        )
 
     def to_scenario(self) -> Scenario:
         bank = self.bank.to_snapshot()

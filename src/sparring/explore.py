@@ -1,7 +1,8 @@
 """Exploration: run generated Scenarios against the agent under a hard dollar cap.
 
 Composition root: the agent on Claude, the Simulated User and the story writer on the
-pinned OpenAI model, and one Langfuse trace per conversation when Langfuse is configured.
+pinned OpenAI model, one Langfuse trace per conversation, and Promotion into the Golden Set
+Dataset in Langfuse, which Exploration therefore needs (ADR-0005).
 It calls paid APIs, so only the user runs it, with a cap that fits the project's budget
 (ADR-0020, ADR-0024).
 """
@@ -21,13 +22,22 @@ from sparring.agent.support_agent import SupportAgent
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.cost import Budget, PriceTable, UnpricedModel
 from sparring.evaluation.exploration import Exploration, ExplorationReport, typical_conversation
+from sparring.evaluation.golden_set import LangfuseGoldenSet
 from sparring.evaluation.narrative import OpenAINarrativeModel
 from sparring.evaluation.oracle import Oracle
+from sparring.evaluation.promotion import Promotion
+from sparring.evaluation.recording import LangfuseRecorder
 from sparring.evaluation.simulated_user import OpenAISimulatedUserModel
 from sparring.system_under_test import kestrel
-from sparring.tracing import recorder, tracing_enabled
+from sparring.tracing import agent_version, langfuse_client
 
-REQUIRED = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "SPARRING_SIMULATOR_MODEL")
+REQUIRED = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "SPARRING_SIMULATOR_MODEL",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+)
 
 
 async def explore(args: argparse.Namespace) -> None:
@@ -45,31 +55,38 @@ async def explore(args: argparse.Namespace) -> None:
     if not args.yes and input("Start? [y/N] ").strip().lower() != "y":
         return
 
-    tracing = tracing_enabled()
-
     async def connect_agent(client: Client) -> SupportAgent:
-        return await SupportAgent.connect(client, agent_model, agent_effort, tracing=tracing)
+        return await SupportAgent.connect(client, agent_model, agent_effort, tracing=True)
 
     run_id = f"explore-{uuid.uuid4().hex[:6]}"
     seed = args.seed if args.seed is not None else random.randrange(1_000_000)
     print(f"Run {run_id}, seed {seed}.")
     metadata = {
+        "agent_version": agent_version(),
         "exploration_run": run_id,
         "agent_model": agent_model,
         "agent_effort": agent_effort or "default",
         "simulator_model": simulator_model,
     }
+    langfuse = langfuse_client()
+    recorder = LangfuseRecorder(langfuse, metadata)
     openai = AsyncOpenAI()
     runner = ScenarioRunner(
         kestrel(connect_agent, agent_model),
         OpenAISimulatedUserModel(openai, simulator_model),
         Oracle(),
-        recorder(metadata),
+        recorder,
     )
+    promotion = Promotion(LangfuseGoldenSet(langfuse), Oracle(), recorder)
     exploration = Exploration(
-        runner, OpenAINarrativeModel(openai, simulator_model), prices, args.parallelism
+        runner,
+        OpenAINarrativeModel(openai, simulator_model),
+        promotion,
+        prices,
+        args.parallelism,
     )
     report = await exploration.run(run_id, args.scenarios, Budget(args.max_cost, estimate), seed)
+    langfuse.flush()
     print_report(report)
 
 
@@ -80,6 +97,8 @@ def print_report(report: ExplorationReport) -> None:
         print(f"  {dimensions}")
         for finding in explored.findings:
             print(f"  - {finding}")
+        if explored.promotion:
+            print(f"  Promotion: {explored.promotion}")
     counts = ", ".join(
         f"{report.count(outcome)} {outcome}"
         for outcome in ("pass", "failure", "inconclusive", "discarded")

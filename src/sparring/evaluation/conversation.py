@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from sparring.evaluation.cost import Usage
+from sparring.evaluation.failure_signature import failure_signature
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.invariants import InvariantViolation, invariant_violations
 from sparring.evaluation.oracle import Oracle
@@ -53,6 +54,8 @@ class Conversation:
     reached_turn_limit: bool
     interrupted_by: str | None = None
     """The infrastructure failure that cut the conversation short, if one did."""
+    trace_id: str | None = None
+    """Where the conversation was recorded."""
 
     @property
     def usage(self) -> list[Usage]:
@@ -78,6 +81,8 @@ class Verdict:
     inconclusive: bool
     differences: list[str]
     violations: list[InvariantViolation]
+    signature: str | None = None
+    """The Failure Signature, on a Failure only."""
 
     @property
     def failed(self) -> bool:
@@ -109,10 +114,10 @@ class ScenarioRunner:
     async def run(self, scenario: Scenario) -> tuple[Conversation, Verdict]:
         conversation_id = f"{scenario.id}-{uuid.uuid4().hex[:8]}"
         async with (
-            self._recorder.conversation(scenario, conversation_id),
+            self._recorder.conversation(scenario, conversation_id) as trace_id,
             self._open_system(scenario, conversation_id) as system,
         ):
-            conversation = await self._play(conversation_id, scenario, system)
+            conversation = await self._play(conversation_id, scenario, system, trace_id)
             verdict = self._judge(conversation)
             self._recorder.record(conversation, verdict)
         return conversation, verdict
@@ -120,14 +125,25 @@ class ScenarioRunner:
     def _judge(self, conversation: Conversation) -> Verdict:
         if conversation.interrupted_by is not None:
             return Verdict(inconclusive=True, differences=[], violations=[])
+        scenario = conversation.scenario
+        differences = self._oracle.compare(scenario, conversation.final)
+        violations = invariant_violations(conversation.transcript)
+        failed = bool(differences or violations)
         return Verdict(
             inconclusive=False,
-            differences=self._oracle.differences(conversation.scenario, conversation.final),
-            violations=invariant_violations(conversation.transcript),
+            differences=[str(difference) for difference in differences],
+            violations=violations,
+            signature=failure_signature(scenario.goal.intent.operation, differences, violations)
+            if failed
+            else None,
         )
 
     async def _play(
-        self, conversation_id: str, scenario: Scenario, system: SystemUnderTest
+        self,
+        conversation_id: str,
+        scenario: Scenario,
+        system: SystemUnderTest,
+        trace_id: str | None,
     ) -> Conversation:
         transcript: list[Turn] = []
         try:
@@ -140,9 +156,15 @@ class ScenarioRunner:
                 system.bank_snapshot(),
                 reached_turn_limit=False,
                 interrupted_by=str(failure),
+                trace_id=trace_id,
             )
         return Conversation(
-            conversation_id, scenario, transcript, system.bank_snapshot(), reached_turn_limit
+            conversation_id,
+            scenario,
+            transcript,
+            system.bank_snapshot(),
+            reached_turn_limit,
+            trace_id=trace_id,
         )
 
     async def _exchange(

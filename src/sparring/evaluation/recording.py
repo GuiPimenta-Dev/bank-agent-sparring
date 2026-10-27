@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from langfuse import Langfuse, propagate_attributes
 
-from sparring.evaluation.scenario import Scenario
+from sparring.evaluation.scenario import Scenario, scenario_to_json
 
 if TYPE_CHECKING:
     from sparring.evaluation.conversation import Conversation, Verdict
@@ -16,11 +16,16 @@ class Recorder(Protocol):
 
     def conversation(
         self, scenario: Scenario, conversation_id: str
-    ) -> AbstractAsyncContextManager[None]:
-        """Everything that happens inside belongs to this conversation."""
+    ) -> AbstractAsyncContextManager[str | None]:
+        """Everything that happens inside belongs to this conversation, recorded under the
+        trace id it yields."""
         ...
 
     def record(self, conversation: "Conversation", verdict: "Verdict") -> None: ...
+
+    def promotion_decided(self, trace_id: str | None, decision: str) -> None:
+        """What Promotion decided about the Failure recorded under `trace_id`."""
+        ...
 
 
 class LangfuseRecorder:
@@ -28,8 +33,8 @@ class LangfuseRecorder:
 
     Every conversation gets an `inconclusive` score, so its mean is the Inconclusive rate;
     only conclusive ones get `oracle_pass` (ADR-0017). Each Hard Rule refusal and each
-    Invariant violation is a categorical score named after the rule or Invariant, so they
-    can be counted across conversations.
+    Invariant violation is a categorical score named after the rule or Invariant, and every
+    Failure a `failure_signature`, so they can be counted across conversations (ADR-0012).
     """
 
     def __init__(self, langfuse: Langfuse, metadata: Mapping[str, str]) -> None:
@@ -37,10 +42,14 @@ class LangfuseRecorder:
         self._metadata = metadata
 
     @asynccontextmanager
-    async def conversation(self, scenario: Scenario, conversation_id: str) -> AsyncGenerator[None]:
+    async def conversation(
+        self, scenario: Scenario, conversation_id: str
+    ) -> AsyncGenerator[str | None]:
         metadata = {**self._metadata, **scenario.dimensions, "scenario_id": scenario.id}
         with (
-            self._langfuse.start_as_current_observation(name="conversation", as_type="span"),
+            self._langfuse.start_as_current_observation(
+                name="conversation", as_type="span", input={"scenario": scenario_to_json(scenario)}
+            ),
             propagate_attributes(
                 session_id=conversation_id,
                 trace_name=f"scenario {scenario.id}",
@@ -48,7 +57,7 @@ class LangfuseRecorder:
                 metadata=metadata,
             ),
         ):
-            yield
+            yield self._langfuse.get_current_trace_id()
 
     def record(self, conversation: "Conversation", verdict: "Verdict") -> None:
         self._langfuse.update_current_span(
@@ -77,15 +86,30 @@ class LangfuseRecorder:
             self._langfuse.score_current_trace(
                 name="invariant_violation", value=violation.invariant, data_type="CATEGORICAL"
             )
+        if verdict.signature is not None:
+            self._langfuse.score_current_trace(
+                name="failure_signature", value=verdict.signature, data_type="CATEGORICAL"
+            )
+
+    def promotion_decided(self, trace_id: str | None, decision: str) -> None:
+        self._langfuse.create_score(
+            trace_id=trace_id, name="promotion", value=decision, data_type="CATEGORICAL"
+        )
 
 
 class InMemoryRecorder:
     def __init__(self) -> None:
         self.records: list[tuple[Conversation, Verdict]] = []
+        self.promotions: dict[str | None, str] = {}
 
     @asynccontextmanager
-    async def conversation(self, scenario: Scenario, conversation_id: str) -> AsyncGenerator[None]:
-        yield
+    async def conversation(
+        self, scenario: Scenario, conversation_id: str
+    ) -> AsyncGenerator[str | None]:
+        yield f"trace-{conversation_id}"
 
     def record(self, conversation: "Conversation", verdict: "Verdict") -> None:
         self.records.append((conversation, verdict))
+
+    def promotion_decided(self, trace_id: str | None, decision: str) -> None:
+        self.promotions[trace_id] = decision
