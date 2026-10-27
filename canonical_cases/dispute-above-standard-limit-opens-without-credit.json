@@ -50,7 +50,9 @@
   "goal": {
     "intent": {
       "operation": "dispute_transaction",
-      "transaction_id": "tx-ana-currys"
+      "transaction_ids": [
+        "tx-ana-currys"
+      ]
     },
     "narrative": "Currys charged your debit card £500.01 on 14 October for a laptop they never delivered and will not refund. You want that payment disputed, even if no money comes back while it is investigated. You still have your card and it is safe. Confirm the request in your app if it matches."
   },

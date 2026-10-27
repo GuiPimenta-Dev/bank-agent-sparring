@@ -8,6 +8,7 @@ from typing import Self
 from sparring.bank.domain.card import Card, CardId
 from sparring.bank.domain.customer import Customer, CustomerId
 from sparring.bank.domain.dispute import Dispute, DisputeId
+from sparring.bank.domain.escalation import Escalation, EscalationId
 from sparring.bank.domain.fee import Fee, FeeId
 from sparring.bank.domain.pending_action import PendingAction, PendingActionId
 from sparring.bank.domain.transaction import Transaction, TransactionId
@@ -25,6 +26,9 @@ class BankState:
         default_factory=dict[TransactionId, Transaction]
     )
     disputes: dict[DisputeId, Dispute] = field(default_factory=dict[DisputeId, Dispute])
+    escalations: dict[EscalationId, Escalation] = field(
+        default_factory=dict[EscalationId, Escalation]
+    )
 
 
 class InMemoryBank:
@@ -61,6 +65,7 @@ class InMemoryUnitOfWork:
     fees: "InMemoryFeeRepository"
     transactions: "InMemoryTransactionRepository"
     disputes: "InMemoryDisputeRepository"
+    escalations: "InMemoryEscalationRepository"
 
     def __init__(self, bank: InMemoryBank) -> None:
         self._bank = bank
@@ -75,6 +80,7 @@ class InMemoryUnitOfWork:
         self.fees = InMemoryFeeRepository(self._working.fees)
         self.transactions = InMemoryTransactionRepository(self._working.transactions)
         self.disputes = InMemoryDisputeRepository(self._working.disputes)
+        self.escalations = InMemoryEscalationRepository(self._working.escalations)
         return self
 
     async def __aexit__(
@@ -153,3 +159,11 @@ class InMemoryDisputeRepository:
 
     async def add(self, dispute: Dispute) -> None:
         self._disputes[dispute.id] = dispute
+
+
+class InMemoryEscalationRepository:
+    def __init__(self, escalations: dict[EscalationId, Escalation]) -> None:
+        self._escalations = escalations
+
+    async def add(self, escalation: Escalation) -> None:
+        self._escalations[escalation.id] = escalation

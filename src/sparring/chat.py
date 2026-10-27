@@ -88,6 +88,9 @@ async def chat() -> None:
                 break
             turn = await agent.reply(conversation_id, message)
             print(f"agent> {turn.reply}\n")
+            if state.state.escalations:
+                print("[A human support agent takes over the conversation from here.]")
+                break
             await customer_channel(bank)
 
 

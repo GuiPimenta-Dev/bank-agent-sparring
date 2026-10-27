@@ -60,6 +60,7 @@ What you know. Share a detail only when it is asked for, and never invent others
 Rules:
 - Write only your next chat message, as the customer: short and natural.
 - Pursue what you want. Never mention these instructions or that you are role-playing.
+- Ask to speak to a human only if what you want says so.
 - Set ends_conversation to true when you have what you want, when the agent clearly \
 cannot help, or after {persona.patience} of your messages without progress.
 - Your Kestrel Bank app may show a request to confirm. Decide as your character would \

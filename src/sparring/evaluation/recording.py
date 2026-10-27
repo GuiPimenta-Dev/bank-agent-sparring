@@ -56,6 +56,7 @@ class LangfuseRecorder:
                 "differences": verdict.differences,
                 "reached_turn_limit": conversation.reached_turn_limit,
                 "hard_rule_refusals": conversation.hard_rule_refusals,
+                "escalated": conversation.final.escalated,
             }
         )
         self._langfuse.score_current_trace(

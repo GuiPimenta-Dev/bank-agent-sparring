@@ -59,7 +59,9 @@
   "goal": {
     "intent": {
       "operation": "dispute_transaction",
-      "transaction_id": "tx-ana-ryanair"
+      "transaction_ids": [
+        "tx-ana-ryanair"
+      ]
     },
     "narrative": "Ryanair charged your debit card £212.30 on 27 August for a flight they cancelled, and the refund never came. You want that payment disputed. You still have your card and it is safe. Confirm the request in your app if it matches."
   },

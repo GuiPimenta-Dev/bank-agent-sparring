@@ -62,6 +62,7 @@ class KestrelUnderTest:
             list(state.fees.values()),
             list(state.transactions.values()),
             list(state.disputes.values()),
+            escalated=bool(state.escalations),
         )
 
     def hard_rule_refusals(self) -> list[str]:

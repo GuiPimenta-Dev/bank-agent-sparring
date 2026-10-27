@@ -1,0 +1,70 @@
+{
+  "id": "explicit-request-for-a-human-escalates-without-verification",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [],
+    "disputes": []
+  },
+  "persona": {
+    "name": "Ana Souza",
+    "customer_id": "C-1001",
+    "temperament": "polite but firm",
+    "patience": 5,
+    "facts": {
+      "full name": "Ana Souza"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "escalate"
+    },
+    "narrative": "A Kestrel Bank phone adviser was rude to you last week, and you want to complain about it to a human being, not a chatbot. You do not want to give a chatbot your personal details; the human can ask for them."
+  },
+  "dimensions": {
+    "operation": "escalate",
+    "policy_rule": "ES-1, ES-2"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [],
+    "disputes": [],
+    "escalated": true
+  }
+}

@@ -6,6 +6,7 @@ from sparring.bank.application.ports import Clock, UnitOfWork
 from sparring.bank.domain.card import Card, CardId, FreezeSource, LossReason
 from sparring.bank.domain.customer import Customer, CustomerId, IdentityClaim
 from sparring.bank.domain.dispute import describe_dispute, ensure_disputable, open_dispute
+from sparring.bank.domain.escalation import Escalation, EscalationId
 from sparring.bank.domain.lost_or_stolen_report import (
     describe_lost_or_stolen_report,
     execute_lost_or_stolen_report,
@@ -32,8 +33,8 @@ class Bank:
 
     The agent's operations act on the Customer of an active Verified Session; a card,
     transaction or Pending Action of any other Customer does not exist for it.
-    Confirmations come only through the Customer Channel, which identifies the
-    Customer itself (ADR-0004).
+    Escalation alone needs no Verified Session (ES-1). Confirmations come only through
+    the Customer Channel, which identifies the Customer itself (ADR-0004).
     """
 
     def __init__(
@@ -121,6 +122,14 @@ class Bank:
                 DisputeTransaction(transaction.id),
                 describe_dispute(transaction, customer),
             )
+
+    async def escalate(self, reason: str) -> Escalation:
+        """Hand the conversation to a human support agent (ES-1)."""
+        escalation = Escalation(EscalationId(f"esc-{uuid.uuid4().hex[:8]}"), reason)
+        async with self._unit_of_work() as uow:
+            await uow.escalations.add(escalation)
+            await uow.commit()
+        return escalation
 
     async def pending_action(
         self, session: VerifiedSession, pending_action_id: PendingActionId

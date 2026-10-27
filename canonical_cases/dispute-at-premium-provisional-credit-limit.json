@@ -50,7 +50,9 @@
   "goal": {
     "intent": {
       "operation": "dispute_transaction",
-      "transaction_id": "tx-ben-apple"
+      "transaction_ids": [
+        "tx-ben-apple"
+      ]
     },
     "narrative": "The Apple Store charged your debit card £1,000.00 on 14 October for a phone you returned unopened, and the refund never came. You want that payment disputed. You still have your card and it is safe. Confirm the request in your app if it matches."
   },

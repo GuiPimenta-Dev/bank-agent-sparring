@@ -14,7 +14,9 @@ from sparring.bank.domain.fee import Fee, FeeId
 from sparring.bank.domain.money import Money
 from sparring.bank.domain.transaction import Transaction, TransactionId
 
-Operation = Literal["freeze_card", "unfreeze_card", "report_lost_or_stolen", "dispute_transaction"]
+Operation = Literal[
+    "freeze_card", "unfreeze_card", "report_lost_or_stolen", "dispute_transaction", "escalate"
+]
 
 
 @dataclass
@@ -24,6 +26,8 @@ class BankSnapshot:
     fees: list[Fee] = field(default_factory=list[Fee])
     transactions: list[Transaction] = field(default_factory=list[Transaction])
     disputes: list[Dispute] = field(default_factory=list[Dispute])
+    escalated: bool = False
+    """Whether the conversation was handed to a human support agent."""
 
     def card(self, card_id: CardId) -> Card:
         return next(card for card in self.cards if card.id == card_id)
@@ -42,6 +46,8 @@ class BankSnapshot:
         lines += _differences("dispute", self.disputes, actual.disputes)
         if self.customers != actual.customers:
             lines.append("customers differ")
+        if self.escalated != actual.escalated:
+            lines.append(f"escalated: expected {self.escalated}, found {actual.escalated}")
         return lines
 
 
@@ -77,12 +83,18 @@ class Persona:
 
 @dataclass(frozen=True)
 class Intent:
-    """The operation the Customer wants, on a card or, for a Dispute, on a transaction."""
+    """The operation the Customer wants: on a card, on transactions for a Dispute, or, to
+    Escalate, on nothing.
+
+    A Customer who does not recognise the transactions they dispute accepts the Freeze
+    the agent must offer them (DS-7, ADR-0025).
+    """
 
     operation: Operation
     card_id: CardId | None = None
     reason: LossReason | None = None
-    transaction_id: TransactionId | None = None
+    transaction_ids: tuple[TransactionId, ...] = ()
+    unrecognised: bool = False
 
 
 @dataclass(frozen=True)
@@ -168,6 +180,7 @@ class _BankFile(BaseModel):
     fees: list[_FeeFile] = Field(default_factory=list[_FeeFile])
     transactions: list[_TransactionFile] = Field(default_factory=list[_TransactionFile])
     disputes: list[_DisputeFile] = Field(default_factory=list[_DisputeFile])
+    escalated: bool = False
 
     def to_snapshot(self) -> BankSnapshot:
         return BankSnapshot(
@@ -212,6 +225,7 @@ class _BankFile(BaseModel):
                 )
                 for d in self.disputes
             ],
+            escalated=self.escalated,
         )
 
 
@@ -229,7 +243,8 @@ class _IntentFile(BaseModel):
     operation: Operation
     card_id: str | None = None
     reason: LossReason | None = None
-    transaction_id: str | None = None
+    transaction_ids: list[str] = Field(default_factory=list[str])
+    unrecognised: bool = False
 
 
 class _GoalFile(BaseModel):
@@ -252,20 +267,28 @@ class _ScenarioFile(BaseModel):
         bank = self.bank.to_snapshot()
         intent = self.goal.intent
         disputing = intent.operation == "dispute_transaction"
-        if disputing != (intent.transaction_id is not None) or disputing == (
-            intent.card_id is not None
-        ):
-            raise ValueError(f"Scenario {self.id}: a Dispute names a transaction, others a card")
+        on_a_card = not disputing and intent.operation != "escalate"
+        if disputing != bool(intent.transaction_ids) or on_a_card != (intent.card_id is not None):
+            raise ValueError(
+                f"Scenario {self.id}: a Dispute names transactions, an Escalation nothing, "
+                "others a card"
+            )
         if intent.card_id and intent.card_id not in {card.id for card in bank.cards}:
             raise ValueError(f"Scenario {self.id}: the Goal names unknown card {intent.card_id}")
-        if intent.transaction_id and intent.transaction_id not in {
-            transaction.id for transaction in bank.transactions
-        }:
-            raise ValueError(
-                f"Scenario {self.id}: the Goal names unknown transaction {intent.transaction_id}"
-            )
+        known = {transaction.id for transaction in bank.transactions}
+        for transaction_id in intent.transaction_ids:
+            if transaction_id not in known:
+                raise ValueError(
+                    f"Scenario {self.id}: the Goal names unknown transaction {transaction_id}"
+                )
+        if len(set(intent.transaction_ids)) != len(intent.transaction_ids):
+            raise ValueError(f"Scenario {self.id}: the Goal names a transaction twice")
         if (intent.operation == "report_lost_or_stolen") != (intent.reason is not None):
             raise ValueError(f"Scenario {self.id}: a reason goes with report_lost_or_stolen only")
+        if intent.unrecognised and not disputing:
+            raise ValueError(f"Scenario {self.id}: only a Dispute can be unrecognised")
+        if bank.escalated:
+            raise ValueError(f"Scenario {self.id}: a Scenario starts before any Escalation")
         if CustomerId(self.persona.customer_id) not in {c.id for c in bank.customers}:
             raise ValueError(f"Scenario {self.id}: the Persona plays unknown customer")
         return Scenario(
@@ -284,7 +307,8 @@ class _ScenarioFile(BaseModel):
                     intent.operation,
                     CardId(intent.card_id) if intent.card_id else None,
                     intent.reason,
-                    TransactionId(intent.transaction_id) if intent.transaction_id else None,
+                    tuple(TransactionId(t) for t in intent.transaction_ids),
+                    intent.unrecognised,
                 ),
                 self.goal.narrative,
             ),

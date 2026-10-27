@@ -1,0 +1,157 @@
+{
+  "id": "three-unrecognised-transactions-escalate-after-a-freeze",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ana-steam",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "STEAMGAMES.COM",
+        "amount": "12.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-24"
+      },
+      {
+        "id": "tx-ana-roblox",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "ROBLOX.COM",
+        "amount": "24.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-24"
+      },
+      {
+        "id": "tx-ana-apple",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "APPLE.COM/BILL",
+        "amount": "9.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-25"
+      },
+      {
+        "id": "tx-ana-groceries",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "Tesco",
+        "amount": "18.20",
+        "currency": "GBP",
+        "settled_on": "2026-10-20"
+      }
+    ],
+    "disputes": []
+  },
+  "persona": {
+    "name": "Ana Souza",
+    "customer_id": "C-1001",
+    "temperament": "worried but cooperative: you read what the app asks before confirming",
+    "patience": 6,
+    "facts": {
+      "customer number": "C-1001",
+      "date of birth": "1990-05-17",
+      "postcode": "SW1A 1AA",
+      "debit card": "ends in 4242",
+      "the payments you do not recognise": "£12.99 to STEAMGAMES.COM and £24.99 to ROBLOX.COM on 24 October, and £9.99 to APPLE.COM/BILL on 25 October"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "dispute_transaction",
+      "transaction_ids": [
+        "tx-ana-steam",
+        "tx-ana-roblox",
+        "tx-ana-apple"
+      ],
+      "unrecognised": true
+    },
+    "narrative": "You have just noticed three payments on your debit card that you do not recognise: £12.99 to STEAMGAMES.COM and £24.99 to ROBLOX.COM on 24 October, and £9.99 to APPLE.COM/BILL on 25 October. Your card is still in your wallet. You want them disputed; mention all three when you first explain the problem. If the agent offers to freeze your card, accept. Confirm requests in your app if they match."
+  },
+  "dimensions": {
+    "operation": "dispute_transaction",
+    "tier": "standard",
+    "transaction_count": "3",
+    "recognised": "no",
+    "policy_rule": "ES-4, DS-7"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": "customer",
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ana-steam",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "STEAMGAMES.COM",
+        "amount": "12.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-24"
+      },
+      {
+        "id": "tx-ana-roblox",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "ROBLOX.COM",
+        "amount": "24.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-24"
+      },
+      {
+        "id": "tx-ana-apple",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "APPLE.COM/BILL",
+        "amount": "9.99",
+        "currency": "GBP",
+        "settled_on": "2026-10-25"
+      },
+      {
+        "id": "tx-ana-groceries",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "Tesco",
+        "amount": "18.20",
+        "currency": "GBP",
+        "settled_on": "2026-10-20"
+      }
+    ],
+    "disputes": [],
+    "escalated": true
+  }
+}

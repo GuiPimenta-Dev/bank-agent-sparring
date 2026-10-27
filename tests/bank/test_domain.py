@@ -1,6 +1,7 @@
 import ast
 import sys
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 import sparring.bank.domain
 from sparring.bank.domain.card import Card, CardId, FreezeSource
 from sparring.bank.domain.customer import Customer, CustomerId, IdentityClaim, Tier
+from sparring.bank.domain.money import Money
 from sparring.bank.domain.refusals import CardAlreadyFrozen, CardNotFrozen, FraudFreezeLocked
 
 ANA = CustomerId("C-1001")
@@ -63,3 +65,10 @@ def test_bank_domain_imports_only_the_standard_library() -> None:
                 in_domain = module.startswith("sparring.bank.domain")
                 in_stdlib = module.split(".")[0] in sys.stdlib_module_names
                 assert in_domain or in_stdlib, f"{path.name} imports {module}"
+
+
+def test_money_adds_and_compares_only_in_one_currency() -> None:
+    total = Money(Decimal("1200.00")) + Money(Decimal("800.01"))
+    assert total == Money(Decimal("2000.01")) and total > Money(Decimal("2000.00"))
+    with pytest.raises(ValueError, match="EUR"):
+        assert Money(Decimal("1"), "EUR") + Money(Decimal("2"))

@@ -59,12 +59,23 @@ async def test_verified_customer_freezes_their_card() -> None:
     }
 
 
-async def test_every_other_tool_refuses_before_identity_verification() -> None:
+async def test_account_tools_refuse_before_identity_verification() -> None:
     async with Client(kestrel(ANA_DEBIT)) as client:
         listing = await client.call_tool("list_cards", {})
         freeze = await client.call_tool("freeze_card", {"card_id": "card-ana-debit"})
 
     assert refused_by(listing) == refused_by(freeze) == "IdentityNotVerified"
+
+
+async def test_escalation_needs_no_identity_verification() -> None:
+    state = InMemoryBank([ANA], [ANA_DEBIT])
+    clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+    server = build_mcp_server(Bank(state.unit_of_work, clock), SessionTokens(b"s"), clock)
+    async with Client(server) as client:
+        result = await client.call_tool("escalate", {"reason": "Wants to complain to a human."})
+
+    assert not result.is_error
+    assert [e.reason for e in state.state.escalations.values()] == ["Wants to complain to a human."]
 
 
 async def test_wrong_identity_details_open_no_verified_session() -> None:

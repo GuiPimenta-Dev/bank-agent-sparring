@@ -58,7 +58,9 @@
   "goal": {
     "intent": {
       "operation": "dispute_transaction",
-      "transaction_id": "tx-ana-pret"
+      "transaction_ids": [
+        "tx-ana-pret"
+      ]
     },
     "narrative": "Pret A Manger charged your debit card £42.50 on 14 October for a catering order they then cancelled. You disputed it last week but have heard nothing, so you want to dispute it again to be sure. You still have your card and it is safe. Confirm the request in your app if it matches."
   },

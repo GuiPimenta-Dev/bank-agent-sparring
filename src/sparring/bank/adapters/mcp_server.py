@@ -150,10 +150,19 @@ class Verified(BaseModel):
     tier: Tier
 
 
+class Escalated(BaseModel):
+    escalation_id: str
+    next_step: str = (
+        "A human support agent takes over this conversation now. Tell the Customer, "
+        "and do nothing more yourself."
+    )
+
+
 def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServer:
     server = MCPServer(
         "Kestrel Bank",
-        instructions="Card operations for Kestrel Bank Customers. Call verify_identity first.",
+        instructions="Card operations for Kestrel Bank Customers. Every tool but escalate needs "
+        "verify_identity first.",
     )
 
     def session_of(ctx: Context[Any, Any]) -> VerifiedSession:
@@ -234,6 +243,20 @@ def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServ
         return await _answered(
             lambda: action(bank.request_dispute(session_of(ctx), TransactionId(transaction_id)))
         )
+
+    @server.tool()
+    async def escalate(
+        reason: Annotated[
+            str,
+            Field(
+                min_length=1,
+                description="Why a human is needed, for the human support agent who takes over.",
+            ),
+        ],
+    ) -> CallToolResult:
+        """Hand the conversation to a human support agent. Needs no Identity Verification."""
+        escalation = await bank.escalate(reason)
+        return _result(Escalated(escalation_id=escalation.id))
 
     @server.tool()
     async def get_pending_action(
