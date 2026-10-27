@@ -8,12 +8,15 @@ dependencies = [
     "alembic>=1.20.1",
     "anthropic>=1.17.0",
     "asyncpg>=0.32.0",
+    "fastapi>=0.162.0",
     "langchain>=1.4.7",
     "langchain-anthropic>=1.7.6",
     "langfuse>=5.0.4",
     "langgraph>=1.2.18",
+    "langgraph-checkpoint-postgres>=3.2.0",
     "mcp>=2.3.0",
     "openai>=3.39.0",
+    "psycopg[binary]>=3.3.6",
     "sqlalchemy[asyncio]>=2.0",
 ]
 
@@ -24,6 +27,8 @@ sparring-explore = "sparring.explore:main"
 sparring-failures = "sparring.failures:main"
 sparring-regression-check = "sparring.check_regressions:main"
 sparring-sweep = "sparring.sweep:main"
+sparring-bank = "sparring.bank_service:main"
+sparring-api = "sparring.agent_api:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -82,12 +87,12 @@ forbidden_modules = ["sparring.bank"]
 name = "The bank knows nothing of the agent"
 type = "forbidden"
 source_modules = ["sparring.bank"]
-forbidden_modules = ["sparring.agent", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.failures", "sparring.check_regressions", "sparring.sweep", "sparring.system_under_test", "sparring.tracing"]
+forbidden_modules = ["sparring.agent", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.failures", "sparring.check_regressions", "sparring.sweep", "sparring.bank_service", "sparring.agent_api", "sparring.demo", "sparring.system_under_test", "sparring.tracing"]
 
 [[tool.importlinter.contracts]]
 name = "LangGraph and LangChain stay inside the agent"
 type = "forbidden"
-source_modules = ["sparring.bank", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.failures", "sparring.check_regressions", "sparring.sweep", "sparring.system_under_test", "sparring.tracing"]
+source_modules = ["sparring.bank", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.failures", "sparring.check_regressions", "sparring.sweep", "sparring.bank_service", "sparring.agent_api", "sparring.demo", "sparring.system_under_test", "sparring.tracing"]
 forbidden_modules = ["langgraph", "langchain", "langchain_core", "langchain_anthropic"]
 allow_indirect_imports = true
 

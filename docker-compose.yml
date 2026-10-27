@@ -1,0 +1,72 @@
+# The full stack: the bank, the agent's API with its demo page at http://localhost:8000,
+# their Postgres, and Langfuse at http://localhost:3000 (ADR-0021).
+#
+#   cp .env.example .env                                  # then set ANTHROPIC_API_KEY
+#   cp infra/langfuse/.env.example infra/langfuse/.env
+#   docker compose up -d --build --wait
+#
+# It is one Compose project with infra/langfuse, so the Langfuse containers and their data
+# are the same ones `docker compose up` in infra/langfuse starts.
+name: sparring-langfuse
+
+include:
+  - path:
+      - infra/langfuse/docker-compose.yml
+      - infra/langfuse/docker-compose.override.yml
+    env_file: infra/langfuse/.env
+
+services:
+  database:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sparring
+      POSTGRES_PASSWORD: sparring
+      POSTGRES_DB: sparring
+    volumes:
+      - sparring_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparring"]
+      interval: 2s
+      retries: 15
+
+  bank:
+    build: .
+    command: sparring-bank
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SPARRING_BANK_DATABASE_URL: postgresql+asyncpg://sparring:sparring@database:5432/sparring
+      SPARRING_BANK_HOSTS: bank:8001,localhost:8001
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: .
+    command: sparring-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SPARRING_BANK_URL: http://bank:8001
+      SPARRING_AGENT_DATABASE_URL: postgresql://sparring:sparring@database:5432/sparring
+      LANGFUSE_BASE_URL: http://langfuse-web:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      bank:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 3s
+      retries: 20
+
+volumes:
+  sparring_data:

@@ -33,7 +33,8 @@ src/sparring/
   bank/
     domain/        aggregates, value objects, domain services, HardRuleRefusal
     application/   async use cases and ports (Protocols)
-    adapters/      in_memory.py, clock.py, mcp_server.py, postgres/ (schema, repositories, Alembic migrations)
+    adapters/      in_memory.py, clock.py, mcp_server.py, customer_channel.py (HTTP),
+                   postgres/ (schema, repositories, Alembic migrations)
   agent/
     policy.md      the Policy text, used as the system prompt
     support_agent.py
@@ -41,6 +42,9 @@ src/sparring/
   evaluation/
     one flat file per glossary concept: scenario.py, oracle.py, simulated_user.py, conversation.py, ...
   chat.py          composition root of the terminal chat
+  bank_service.py  composition root of the bank: MCP over Streamable HTTP and the Customer Channel
+  agent_api.py     composition root of the agent's API and its two-panel demo page (demo.html)
+  demo.py          the demo Customer, shared by the chat and the bank service
   run_scenario.py  composition root that runs one Scenario
   explore.py       composition root of Exploration
   failures.py      composition root of the Failure Signature report
