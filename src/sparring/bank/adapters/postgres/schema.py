@@ -104,3 +104,9 @@ escalations = Table(
     Column("id", String, primary_key=True),
     Column("reason", Text, nullable=False),
 )
+
+
+def is_the_bank_s(name: str | None, kind: str, parent_names: object) -> bool:
+    """For Alembic: the database may hold other tables, such as the agent's conversations,
+    which the bank's migrations must leave alone."""
+    return kind != "table" or name in metadata.tables

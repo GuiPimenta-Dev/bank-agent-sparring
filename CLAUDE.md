@@ -30,7 +30,13 @@ Local Langfuse (first time: `cp infra/langfuse/.env.example infra/langfuse/.env`
 (cd infra/langfuse && docker compose up -d --wait)
 ```
 
-Talk to the agent as the demo Customer (first time: `cp .env.example .env` and set `ANTHROPIC_API_KEY`). It calls a paid API, so only the user runs it:
+The demo stack (bank, agent API, Postgres and Langfuse) with the two-panel page at http://localhost:8000 (first time: `cp .env.example .env` and `cp infra/langfuse/.env.example infra/langfuse/.env`). Chatting calls a paid API, so only the user chats:
+
+```bash
+docker compose up -d --build --wait
+```
+
+Talk to the agent in the terminal instead (first time: `cp .env.example .env` and set `ANTHROPIC_API_KEY`). It calls a paid API, so only the user runs it:
 
 ```bash
 uv run --env-file .env sparring-chat

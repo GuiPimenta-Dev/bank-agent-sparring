@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,10 +10,18 @@ from langchain.agents.middleware import AgentState, after_model
 from langchain_anthropic import ChatAnthropic
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableConfig
 from langfuse.langchain import CallbackHandler
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.runtime import Runtime
 from mcp import Client
 
@@ -60,6 +69,21 @@ class AgentUnavailable(Exception):
     """The model provider still failed after the SDK's own retries (ADR-0017)."""
 
 
+@dataclass(frozen=True)
+class Memory:
+    """Where conversations are kept between turns; opaque outside the agent."""
+
+    checkpointer: BaseCheckpointSaver[Any]
+
+
+@asynccontextmanager
+async def persistent_memory(database_url: str) -> AsyncGenerator[Memory]:
+    """Conversations kept in Postgres, so they survive a restart of the agent's process."""
+    async with AsyncPostgresSaver.from_conn_string(database_url) as checkpointer:
+        await checkpointer.setup()
+        yield Memory(checkpointer)
+
+
 class SupportAgent:
     """Kestrel Bank's card support agent (ADR-0011).
 
@@ -73,9 +97,15 @@ class SupportAgent:
 
     @classmethod
     async def connect(
-        cls, bank: Client, model: str, effort: str | None = None, tracing: bool = False
+        cls,
+        bank: Client,
+        model: str,
+        effort: str | None = None,
+        tracing: bool = False,
+        memory: Memory | None = None,
     ) -> "SupportAgent":
-        """An agent on a Claude model, reaching the bank through an MCP client."""
+        """An agent on a Claude model, reaching the bank through an MCP client.
+        Conversations are kept in memory unless `memory` says otherwise."""
         chat_model = ChatAnthropic(
             model_name=model,
             max_tokens_to_sample=16_000,
@@ -83,11 +113,15 @@ class SupportAgent:
             timeout=None,
             stop=None,
         )
-        return await cls.with_model(bank, chat_model, tracing=tracing)
+        return await cls.with_model(bank, chat_model, tracing=tracing, memory=memory)
 
     @classmethod
     async def with_model(
-        cls, bank: Client, model: BaseChatModel, tracing: bool = False
+        cls,
+        bank: Client,
+        model: BaseChatModel,
+        tracing: bool = False,
+        memory: Memory | None = None,
     ) -> "SupportAgent":
         """An agent on any chat model, such as a scripted one in tests."""
         tools = await BankTools(bank).load()
@@ -96,16 +130,47 @@ class SupportAgent:
             tools,
             system_prompt=POLICY,
             middleware=[_cap_tool_calls],
-            checkpointer=InMemorySaver(),
+            checkpointer=memory.checkpointer if memory else InMemorySaver(),
         )
         return cls(graph, [CallbackHandler()] if tracing else [])
 
-    async def reply(self, conversation_id: str, message: str) -> AgentTurn:
-        config: RunnableConfig = {
+    async def stream(self, conversation_id: str, message: str) -> AsyncIterator[str]:
+        """The turn's text as the model writes it, a piece at a time. The whole reply, the
+        tool-call cap's fallback included, is the last agent message in `history`."""
+        stream = self._graph.astream(
+            {"messages": [HumanMessage(message)]},
+            config=self._config(conversation_id),
+            stream_mode="messages",
+        )
+        try:
+            async for chunk, _ in stream:
+                if isinstance(chunk, AIMessageChunk) and chunk.text:
+                    yield chunk.text
+        except anthropic.APIError as error:
+            if _retries_ran_out(error):
+                raise AgentUnavailable(str(error)) from error
+            raise
+
+    async def history(self, conversation_id: str) -> list[tuple[str, str]]:
+        """What the Customer and the agent said so far, as (speaker, text), tool calls left
+        out."""
+        state = await self._graph.aget_state(self._config(conversation_id))
+        messages: list[BaseMessage] = state.values.get("messages", [])
+        return [
+            ("customer" if isinstance(m, HumanMessage) else "agent", m.text)
+            for m in messages
+            if isinstance(m, HumanMessage | AIMessage) and m.text
+        ]
+
+    def _config(self, conversation_id: str) -> RunnableConfig:
+        return {
             "configurable": {"thread_id": conversation_id},
             "callbacks": self._callbacks,
             "metadata": {"langfuse_session_id": conversation_id},
         }
+
+    async def reply(self, conversation_id: str, message: str) -> AgentTurn:
+        config = self._config(conversation_id)
         try:
             state = await self._graph.ainvoke({"messages": [HumanMessage(message)]}, config=config)
         except anthropic.APIError as error:

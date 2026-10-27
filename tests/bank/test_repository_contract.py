@@ -19,7 +19,7 @@ from sparring.bank.adapters.clock import FixedClock
 from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.postgres.migrate import downgrade, migrate
 from sparring.bank.adapters.postgres.repositories import PostgresBank
-from sparring.bank.adapters.postgres.schema import metadata
+from sparring.bank.adapters.postgres.schema import is_the_bank_s, metadata
 from sparring.bank.application.bank import Bank
 from sparring.bank.application.ports import UnitOfWork
 from sparring.bank.domain.card import Card, CardId, FreezeSource, LossReason
@@ -270,7 +270,9 @@ async def test_the_migrations_build_exactly_the_schema_the_adapter_uses(database
     engine = create_async_engine(database)
     async with engine.connect() as connection:
         differences = await connection.run_sync(
-            lambda sync: compare_metadata(MigrationContext.configure(sync), metadata)
+            lambda sync: compare_metadata(
+                MigrationContext.configure(sync, opts={"include_name": is_the_bank_s}), metadata
+            )
         )
     await engine.dispose()
 

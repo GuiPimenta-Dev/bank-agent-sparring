@@ -4,9 +4,11 @@ import itertools
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
 
+from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage, ToolCall
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolCall
+from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
@@ -14,7 +16,29 @@ from sparring.evaluation.simulated_user import Turn, UserMove
 
 
 class ScriptedModel(GenericFakeChatModel):
-    """Replays scripted agent messages; LangChain requires subclassing to accept tools."""
+    """Replays scripted agent messages; LangChain requires subclassing to accept tools.
+
+    It streams each scripted message whole, tool calls included, which LangChain's own fake
+    cannot do for a message without text.
+    """
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        message = self._generate(messages, stop, run_manager, **kwargs).generations[0].message
+        assert isinstance(message, AIMessage)
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content=message.content,
+                tool_calls=message.tool_calls,
+                usage_metadata=message.usage_metadata,
+                id=message.id,
+            )
+        )
 
     def bind_tools(
         self,

@@ -6,11 +6,11 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from sparring.bank.adapters.postgres.schema import metadata
+from sparring.bank.adapters.postgres.schema import is_the_bank_s, metadata
 
 
 def run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=metadata)
+    context.configure(connection=connection, target_metadata=metadata, include_name=is_the_bank_s)
     with context.begin_transaction():
         context.run_migrations()
 
