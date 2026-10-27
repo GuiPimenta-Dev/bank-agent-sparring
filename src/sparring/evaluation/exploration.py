@@ -7,11 +7,13 @@ from decimal import Decimal
 from random import Random
 from typing import Literal
 
-from sparring.evaluation.conversation import ScenarioRunner
+from sparring.evaluation.conversation import ScenarioRunner, Verdict
 from sparring.evaluation.cost import Budget, PriceTable, Usage
 from sparring.evaluation.dimensions import ScenarioDraft, draft, sample_dimensions
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.narrative import INSTRUCTIONS, NarrativeModel, brief, uncited_details
+from sparring.evaluation.promotion import Decision, Promotion, Rerun
+from sparring.evaluation.scenario import Scenario
 
 STORY_ATTEMPTS = 2
 
@@ -38,6 +40,13 @@ class Explored:
     findings: list[str]
     """What went wrong in a Failure, or why the conversation was Inconclusive or its
     Scenario discarded."""
+    promotion: Decision | None = None
+    """What Promotion decided about a Failure."""
+
+    def costing(self, cost: Decimal) -> "Explored":
+        return Explored(
+            self.scenario_id, self.dimensions, self.outcome, cost, self.findings, self.promotion
+        )
 
 
 @dataclass(frozen=True)
@@ -60,17 +69,20 @@ class ExplorationReport:
 
 class Exploration:
     """Generates Scenarios from uniformly sampled Dimensions and runs them concurrently,
-    at most `parallelism` at a time, until the count or the budget runs out."""
+    at most `parallelism` at a time, until the count or the budget runs out. Each Failure
+    goes to Promotion, whose Reproductions draw on the same budget."""
 
     def __init__(
         self,
         runner: ScenarioRunner,
         narrator: NarrativeModel,
+        promotion: Promotion,
         prices: PriceTable,
         parallelism: int,
     ) -> None:
         self._runner = runner
         self._narrator = narrator
+        self._promotion = promotion
         self._prices = prices
         self._parallelism = parallelism
 
@@ -102,29 +114,54 @@ class Exploration:
         explored: list[Explored],
     ) -> None:
         usage: list[Usage] = []
+        reproductions: list[Decimal] = []
+
+        async def reproduce(scenario: Scenario) -> Verdict | None:
+            return await self._reproduce(scenario, budget, reproductions)
+
         try:
-            outcome, findings = await self._outcome(planned, usage)
+            outcome, findings, decision = await self._outcome(planned, usage, reproduce)
         finally:
             cost = self._prices.cost(usage)
             budget.settle(cost)
             slots.release()
-        explored.append(Explored(planned.id, planned.dimensions, outcome, cost, findings))
+        cost += sum(reproductions, Decimal(0))
+        explored.append(Explored(planned.id, planned.dimensions, outcome, cost, findings, decision))
 
     async def _outcome(
-        self, planned: ScenarioDraft, usage: list[Usage]
-    ) -> tuple[Outcome, list[str]]:
+        self, planned: ScenarioDraft, usage: list[Usage], reproduce: Rerun
+    ) -> tuple[Outcome, list[str], Decision | None]:
         try:
             story, uncited = await self._story(planned, usage)
         except InfrastructureFailure as failure:
-            return "inconclusive", [str(failure)]
+            return "inconclusive", [str(failure)], None
         if uncited:
-            return "discarded", [f"the story cited {', '.join(uncited)}, not in the facts"]
+            return "discarded", [f"the story cited {', '.join(uncited)}, not in the facts"], None
         conversation, verdict = await self._runner.run(planned.scenario(story))
         usage += conversation.usage
         if verdict.inconclusive:
-            return "inconclusive", [str(conversation.interrupted_by)]
+            return "inconclusive", [str(conversation.interrupted_by)], None
+        if not verdict.failed:
+            return "pass", [], None
+        decision = await self._promotion.consider(conversation, verdict, reproduce)
         violations = [f"{v.invariant}: {v.detail}" for v in verdict.violations]
-        return ("failure" if verdict.failed else "pass"), [*verdict.differences, *violations]
+        return "failure", [*verdict.differences, *violations], decision
+
+    async def _reproduce(
+        self, scenario: Scenario, budget: Budget, costs: list[Decimal]
+    ) -> Verdict | None:
+        """A Reproduction is a conversation of its own, reserved from the budget like any."""
+        if not budget.reserve():
+            return None
+        usage: list[Usage] = []
+        try:
+            conversation, verdict = await self._runner.run(scenario)
+            usage += conversation.usage
+        finally:
+            cost = self._prices.cost(usage)
+            budget.settle(cost)
+            costs.append(cost)
+        return verdict
 
     async def _story(self, planned: ScenarioDraft, usage: list[Usage]) -> tuple[str, list[str]]:
         """A story that cites only the facts, or the last attempt and what it made up."""

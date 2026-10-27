@@ -28,10 +28,11 @@ def recorder(metadata: Mapping[str, str]) -> Recorder:
     otherwise conversations are only kept in memory."""
     if not tracing_enabled():
         return InMemoryRecorder()
-    return LangfuseRecorder(langfuse_client(), {"agent_version": _git_sha(), **metadata})
+    return LangfuseRecorder(langfuse_client(), {"agent_version": agent_version(), **metadata})
 
 
-def _git_sha() -> str:
+def agent_version() -> str:
+    """The git commit the agent runs from."""
     result = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
     return result.stdout.strip() or "unknown"
 
