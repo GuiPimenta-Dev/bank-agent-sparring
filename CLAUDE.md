@@ -4,7 +4,7 @@ A customer-support agent for Kestrel Bank, a fictional bank, stress-tested by Si
 
 ## Before writing code
 
-- **Vocabulary:** `CONTEXT.md` is the glossary. Use its terms in code and docs, and never the words listed under _Avoid_.
+- **Vocabulary:** `CONTEXT-MAP.md` lists the contexts and links each one's glossary (`CONTEXT.md`). Use their terms in code and docs, and never the words listed under _Avoid_.
 - **Decisions:** `docs/adr/` records why things are the way they are. Don't contradict an ADR silently; propose a new one that supersedes it.
 - **Style:** `docs/code-style.md` is binding.
 
@@ -27,6 +27,12 @@ Talk to the agent as the demo Customer (first time: `cp .env.example .env` and s
 
 ```bash
 uv run --env-file .env sparring-chat
+```
+
+Run one Scenario (or Canonical Case) end-to-end with the real agent and Simulated User — also a paid run, so only with the user's approval:
+
+```bash
+uv run --env-file .env sparring-run-scenario canonical_cases/freeze-active-debit-card.json
 ```
 
 ## Delivering a slice

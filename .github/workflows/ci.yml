@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.3.2
       - run: uv sync --locked
       - run: uv run ruff check .
@@ -22,3 +24,11 @@ jobs:
       - run: uv run pytest
       - name: No ponytail comments
         run: "! grep -rIni ponytail src tests"
+      - name: Policy changes come with Canonical Cases (ADR-0018)
+        if: github.event_name == 'pull_request'
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if grep -qx 'src/sparring/agent/policy.md' <<<"$changed" && ! grep -q '^canonical_cases/' <<<"$changed"; then
+            echo "::error::A change to the Policy must add or change Canonical Cases (ADR-0018)."
+            exit 1
+          fi

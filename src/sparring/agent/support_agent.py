@@ -8,12 +8,9 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
-from langfuse.span_filter import is_default_export_span
 from langgraph.checkpoint.memory import InMemorySaver
 from mcp import Client
-from opentelemetry.sdk.trace import ReadableSpan
 
 from sparring.agent.bank_tools import BankTools
 
@@ -59,7 +56,7 @@ class SupportAgent:
         graph = create_agent(  # pyright: ignore[reportUnknownVariableType]
             model, tools, system_prompt=POLICY, checkpointer=InMemorySaver()
         )
-        return cls(graph, _langfuse_callbacks() if tracing else [])
+        return cls(graph, [CallbackHandler()] if tracing else [])
 
     async def reply(self, conversation_id: str, message: str) -> AgentTurn:
         config: RunnableConfig = {
@@ -69,15 +66,3 @@ class SupportAgent:
         }
         state = await self._graph.ainvoke({"messages": [HumanMessage(message)]}, config=config)
         return AgentTurn(state["messages"][-1].text)
-
-
-def _langfuse_callbacks() -> list[BaseCallbackHandler]:
-    # The MCP SDK traces every tool call on its own; inside a turn those calls are
-    # already visible as the agent's tool runs, so their stray traces are dropped.
-    Langfuse(should_export_span=_not_from_mcp_sdk)
-    return [CallbackHandler()]
-
-
-def _not_from_mcp_sdk(span: ReadableSpan) -> bool:
-    scope = span.instrumentation_scope
-    return is_default_export_span(span) and not (scope and scope.name == "mcp-python-sdk")

@@ -909,6 +909,23 @@ wheels = [
 ]
 
 [[package]]
+name = "openai"
+version = "3.39.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "httpx2" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/25/c8242b66f7bc107d6a02887cb8463f45f54f77a150afb2613e61cb3e13f8/openai-3.39.0.tar.gz", hash = "sha256:02687994f7bb6a4e80ed7796426d46c654889821ce4eb48699be15b3a425e1d3", size = 2376122, upload-time = "2026-10-26T19:19:13.774Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/f9/32f6ceadc53d887894fc0ee7c76cce5567b972045a1c7f35b2a79f912735/openai-3.39.0-py3-none-any.whl", hash = "sha256:e29bc8d9785d9a386cffa0bed1726e7f3989e096245c0c003cb29f1d4ae67e32", size = 2352830, upload-time = "2026-10-26T19:19:10.874Z" },
+]
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1533,6 +1550,7 @@ dependencies = [
     { name = "langfuse" },
     { name = "langgraph" },
     { name = "mcp" },
+    { name = "openai" },
 ]
 
 [package.dev-dependencies]
@@ -1550,6 +1568,7 @@ requires-dist = [
     { name = "langfuse", specifier = ">=5.0.4" },
     { name = "langgraph", specifier = ">=1.2.18" },
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "openai", specifier = ">=3.39.0" },
 ]
 
 [package.metadata.requires-dev]

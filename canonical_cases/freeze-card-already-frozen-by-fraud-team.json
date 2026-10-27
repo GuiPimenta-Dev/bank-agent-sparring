@@ -1,0 +1,75 @@
+{
+  "id": "freeze-card-already-frozen-by-fraud-team",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null
+      },
+      {
+        "id": "card-ana-credit",
+        "customer_id": "C-1001",
+        "last_four": "0005",
+        "frozen_by": "fraud_team"
+      }
+    ]
+  },
+  "persona": {
+    "name": "Ana Souza",
+    "temperament": "calm and cooperative",
+    "patience": 6,
+    "facts": {
+      "customer number": "C-1001",
+      "date of birth": "1990-05-17",
+      "postcode": "SW1A 1AA",
+      "debit card": "ends in 4242",
+      "credit card": "ends in 0005"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "freeze_card",
+      "card_id": "card-ana-credit"
+    },
+    "narrative": "You read about card fraud and want to freeze your credit card (ending 0005) to be safe."
+  },
+  "dimensions": {
+    "operation": "freeze_card",
+    "policy_rule": "FR-3"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null
+      },
+      {
+        "id": "card-ana-credit",
+        "customer_id": "C-1001",
+        "last_four": "0005",
+        "frozen_by": "fraud_team"
+      }
+    ]
+  }
+}

@@ -1,13 +1,8 @@
-from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
-from typing import Any
 
 import pytest
-from langchain_core.language_models import LanguageModelInput
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from fakes import ScriptedModel, calls
 from langchain_core.messages import AIMessage
-from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
 from mcp import Client
 
 from sparring.agent.support_agent import SupportAgent
@@ -22,23 +17,6 @@ pytestmark = pytest.mark.anyio
 
 ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
 ANA_DEBIT = CardId("card-ana-debit")
-
-
-class ScriptedModel(GenericFakeChatModel):
-    """Replays scripted messages; LangChain requires subclassing to accept tools."""
-
-    def bind_tools(
-        self,
-        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
-        *,
-        tool_choice: str | None = None,
-        **kwargs: Any,
-    ) -> Runnable[LanguageModelInput, AIMessage]:
-        return self
-
-
-def calls(name: str, **args: Any) -> AIMessage:
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": name}])
 
 
 async def test_the_agent_freezes_a_card_through_the_bank_tools() -> None:
