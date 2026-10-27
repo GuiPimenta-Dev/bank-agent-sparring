@@ -33,4 +33,5 @@ Then give the user the PR link. Never merge a PR: the user reviews and merges ev
 - All code, docs, commit messages and ADRs are in English.
 - Exploration, Regression Checks and model sweeps call paid LLM APIs. Never run them without the user's explicit approval for that run and its dollar cap.
 - Never write to the Golden Set by hand; it grows only through Promotion.
+- The project's total LLM spend is capped at $15 of prepaid provider credit (ADR-0024). Size every run to fit; never suggest raising the cap to get a run through.
 - Never write `ponytail` comments in this repository; CI rejects them.
