@@ -24,7 +24,7 @@ Enforced by `import-linter`, except the standard-library-only rule for `bank.dom
 | `agent` | `langgraph`, `langchain_*`, third-party libraries | `bank`, `evaluation` |
 | `evaluation` | `bank.domain`, the public interface of `agent` | `langgraph`, `langchain_*`, other parts of `bank` |
 
-`agent` reaches the bank only through MCP. Nothing imports `evaluation`.
+`agent` reaches the bank only through MCP. Nothing imports `evaluation`. Composition roots such as `sparring/chat.py` wire modules together and never import LangGraph or LangChain directly.
 
 ## Layout
 
@@ -38,7 +38,8 @@ src/sparring/
   agent/
     policy.md      the Policy text, used as the system prompt
     support_agent.py
-    graph.py
+    bank_tools.py  the bank's MCP tools as LangChain tools
+  chat.py          composition root of the terminal chat
   evaluation/
     one flat file per glossary concept: scenario.py, sampling.py, oracle.py, promotion.py, ...
 ```
