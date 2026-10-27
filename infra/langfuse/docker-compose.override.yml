@@ -1,0 +1,16 @@
+# Leaves the vendored docker-compose.yml (Langfuse v4.70.1) untouched. Only the web UI
+# (port 3000) is published, so the stack never collides with databases or object
+# stores already running on the host.
+name: sparring-langfuse
+
+services:
+  langfuse-worker:
+    ports: !reset []
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  clickhouse:
+    ports: !reset []
+  minio:
+    ports: !reset []
