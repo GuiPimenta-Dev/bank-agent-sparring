@@ -41,6 +41,8 @@ class LangfuseRecorder:
     Invariant violation is a categorical score named after the rule or Invariant, and every
     Failure a `failure_signature`, so they can be counted across conversations (ADR-0012).
     The LLM judges' `tone` and `drift_suspected` carry their reasoning as the comment.
+    Every conclusive conversation also gets a `failure` score carrying its Scenario's
+    Dimension values, the input of Adaptive Sampling.
     """
 
     def __init__(self, langfuse: Langfuse, metadata: Mapping[str, str]) -> None:
@@ -83,6 +85,12 @@ class LangfuseRecorder:
         if not verdict.inconclusive:
             self._langfuse.score_current_trace(
                 name="oracle_pass", value=0 if verdict.differences else 1, data_type="BOOLEAN"
+            )
+            self._langfuse.score_current_trace(
+                name="failure",
+                value=1 if verdict.failed else 0,
+                data_type="BOOLEAN",
+                metadata=dict(conversation.scenario.dimensions),
             )
         for rule in conversation.hard_rule_refusals:
             self._langfuse.score_current_trace(

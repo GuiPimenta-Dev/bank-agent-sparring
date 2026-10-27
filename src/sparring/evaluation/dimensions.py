@@ -17,6 +17,7 @@ from sparring.bank.domain.customer import Customer, CustomerId, Tier
 from sparring.bank.domain.dispute import DISPUTE_WINDOW, PROVISIONAL_CREDIT_LIMIT
 from sparring.bank.domain.money import Money
 from sparring.bank.domain.transaction import Transaction, TransactionId
+from sparring.evaluation.adaptive_sampling import Weights
 from sparring.evaluation.scenario import BankSnapshot, Goal, Intent, Operation, Persona, Scenario
 
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
@@ -80,17 +81,33 @@ UNRECOGNISED_MERCHANTS = ("STEAMGAMES.COM", "ROBLOX.COM", "APPLE.COM/BILL", "SHE
 EVERYDAY = (("Tesco", "18.20"), ("Trainline", "42.60"))
 
 
-def sample_dimensions(random: Random) -> dict[str, str]:
-    """Uniform over operations, then over each Dimension the operation has."""
-    operation = random.choice(OPERATIONS)
+def every_value() -> dict[str, tuple[str, ...]]:
+    """Each Dimension with every value it takes, for whichever operation."""
+    choices = {name: tuple(values) for name, values in {"operation": OPERATIONS, **SHARED}.items()}
+    for dimensions in PER_OPERATION.values():
+        for name, values in dimensions.items():
+            choices[name] = tuple(dict.fromkeys([*choices.get(name, ()), *values]))
+    return choices
+
+
+def sample_dimensions(random: Random, weights: Weights | None = None) -> dict[str, str]:
+    """The operation first, then each Dimension the operation has: uniformly, or by
+    `weights` (Adaptive Sampling) renormalised over the values the operation allows."""
+
+    def choose[Value: str](name: str, choices: Sequence[Value]) -> Value:
+        if weights is None or name not in weights:
+            return random.choice(choices)
+        return random.choices(choices, [weights[name].get(value, 0.0) for value in choices])[0]
+
+    operation = choose("operation", OPERATIONS)
     values = {"operation": operation}
     for name, choices in {**SHARED, **PER_OPERATION[operation]}.items():
-        values[name] = random.choice(choices)
+        values[name] = choose(name, choices)
     if (
         values.get("transaction_count") == "1"
         and values["transaction_state"] == "settled_and_pending"
     ):
-        values["transaction_state"] = random.choice(("settled", "pending"))
+        values["transaction_state"] = choose("transaction_state", ("settled", "pending"))
     if values.get("transaction_state") == "pending":
         del values["transaction_age"]
     return values
