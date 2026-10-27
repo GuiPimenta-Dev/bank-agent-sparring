@@ -43,8 +43,9 @@ Each GitHub issue is a vertical slice. A slice is delivered when all of this has
 2. The work is committed on a branch named `<issue>-<slug>` (e.g. `1-walking-skeleton`).
 3. The branch is pushed and a PR is opened whose body starts with `Closes #<issue>` and carries the delivery report: what each acceptance criterion gained, decisions worth recording (and any ADR added or superseded), what was deliberately left out, and the known limits of deliberate simplifications.
 4. CI is green on the PR.
+5. The PR is merged with a merge commit (`gh pr merge --merge`). Every slice keeps its own PR as history, and the next slice starts from the updated `main`; PRs are never stacked.
 
-Then give the user the PR link. Never merge a PR: the user reviews and merges every one, to keep control of what lands on `main`.
+Then give the user the PR link.
 
 ## Rules for agents
 
