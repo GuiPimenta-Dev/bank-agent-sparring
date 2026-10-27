@@ -38,14 +38,31 @@ def says(text: str) -> AIMessage:
 
 
 class ScriptedSimulatedUser:
-    """A SimulatedUserModel that replays scripted moves and keeps what it was shown."""
+    """A SimulatedUserModel that replays scripted moves and keeps what it was shown.
 
-    def __init__(self, moves: Iterable[UserMove]) -> None:
+    With `answer_requests` set, it also answers every request its app shows: True for a
+    careless Customer who confirms anything, False for one who rejects everything.
+    """
+
+    def __init__(self, moves: Iterable[UserMove], answer_requests: bool | None = None) -> None:
         self._moves = iter(moves)
+        self._answer_requests = answer_requests
         self.instructions = ""
         self.transcripts: list[list[Turn]] = []
 
     async def next_move(self, instructions: str, transcript: Sequence[Turn]) -> UserMove:
         self.instructions = instructions
         self.transcripts.append(list(transcript))
-        return next(self._moves)
+        move = next(self._moves)
+        if self._answer_requests is None:
+            return move
+        shown = [
+            turn.text.removeprefix("Request ").split(":")[0]
+            for turn in transcript
+            if turn.speaker == "customer_channel" and turn.text.startswith("Request ")
+        ]
+        answered = {
+            request_id for request_id in shown if f"request {request_id}." in str(transcript)
+        }
+        decisions = {r: self._answer_requests for r in shown if r not in answered}
+        return UserMove(move.message, move.ends_conversation, {**decisions, **move.decisions})

@@ -10,10 +10,24 @@ from sparring.evaluation.scenario import BankSnapshot, Scenario
 from sparring.evaluation.simulated_user import SimulatedUser, SimulatedUserModel, Turn
 
 
+@dataclass(frozen=True)
+class ConfirmationRequest:
+    id: str
+    summary: str
+
+
 class SystemUnderTest(Protocol):
     """The agent and the bank behind it, freshly set up for one Scenario."""
 
     async def reply(self, message: str) -> str: ...
+
+    async def confirmation_requests(self) -> list[ConfirmationRequest]:
+        """What the Persona's Customer Channel shows right now."""
+        ...
+
+    async def answer(self, request_id: str, confirm: bool) -> None:
+        """Confirm or reject a request through the Customer Channel, never the agent."""
+        ...
 
     def bank_snapshot(self) -> BankSnapshot: ...
 
@@ -66,12 +80,35 @@ class ScenarioRunner:
         """The Simulated User ends the conversation; the turn limit is only a safety stop."""
         user = SimulatedUser(scenario, self._simulator)
         transcript: list[Turn] = []
+        shown: set[str] = set()
         for _ in range(self._turn_limit):
+            requests = {request.id: request for request in await system.confirmation_requests()}
+            for request in requests.values():
+                if request.id not in shown:
+                    shown.add(request.id)
+                    transcript.append(
+                        Turn("customer_channel", f"Request {request.id}: {request.summary}")
+                    )
             move = await user.next_move(transcript)
+            for request_id, confirm in move.decisions.items():
+                if request_id in requests:
+                    await system.answer(request_id, confirm)
+                    verb = "confirmed" if confirm else "rejected"
+                    transcript.append(Turn("customer_channel", f"You {verb} request {request_id}."))
             transcript.append(Turn("customer", move.message))
             if move.ends_conversation:
-                return Conversation(
-                    conversation_id, scenario, transcript, system.bank_snapshot(), False
-                )
+                return self._ended(conversation_id, scenario, transcript, system, False)
             transcript.append(Turn("agent", await system.reply(move.message)))
-        return Conversation(conversation_id, scenario, transcript, system.bank_snapshot(), True)
+        return self._ended(conversation_id, scenario, transcript, system, True)
+
+    @staticmethod
+    def _ended(
+        conversation_id: str,
+        scenario: Scenario,
+        transcript: list[Turn],
+        system: SystemUnderTest,
+        reached_turn_limit: bool,
+    ) -> Conversation:
+        return Conversation(
+            conversation_id, scenario, transcript, system.bank_snapshot(), reached_turn_limit
+        )

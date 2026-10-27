@@ -1,0 +1,89 @@
+{
+  "id": "report-cancelled-card-changes-nothing",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": "stolen",
+        "replaces": null
+      },
+      {
+        "id": "card-ana-credit",
+        "customer_id": "C-1001",
+        "last_four": "0005",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ]
+  },
+  "persona": {
+    "name": "Ana Souza",
+    "customer_id": "C-1001",
+    "temperament": "calm and careful: you read what the app asks before confirming",
+    "patience": 6,
+    "facts": {
+      "customer number": "C-1001",
+      "date of birth": "1990-05-17",
+      "postcode": "SW1A 1AA",
+      "debit card": "ends in 4242",
+      "credit card": "ends in 0005"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "report_lost_or_stolen",
+      "card_id": "card-ana-debit",
+      "reason": "lost"
+    },
+    "narrative": "You think your old debit card (ending 4242) is lost and want to report it."
+  },
+  "dimensions": {
+    "operation": "report_lost_or_stolen",
+    "tier": "standard",
+    "policy_rule": "LS-1"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": "stolen",
+        "replaces": null
+      },
+      {
+        "id": "card-ana-credit",
+        "customer_id": "C-1001",
+        "last_four": "0005",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "fees": []
+  }
+}

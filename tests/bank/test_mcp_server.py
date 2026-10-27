@@ -10,13 +10,13 @@ from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SESSION_META_KEY, SessionTokens, build_mcp_server
 from sparring.bank.application.bank import Bank
 from sparring.bank.domain.card import Card, CardId, FreezeSource
-from sparring.bank.domain.customer import Customer, CustomerId
+from sparring.bank.domain.customer import Customer, CustomerId, Tier
 from sparring.bank.domain.verified_session import VerifiedSession
 
 pytestmark = pytest.mark.anyio
 
-ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
-BEN = Customer(CustomerId("C-2002"), "Ben Okafor", date(1984, 1, 2), "M1 1AE")
+ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA", Tier.STANDARD)
+BEN = Customer(CustomerId("C-2002"), "Ben Okafor", date(1984, 1, 2), "M1 1AE", Tier.PREMIUM)
 ANA_DEBIT = Card(CardId("card-ana-debit"), ANA.id, "4242")
 BEN_DEBIT = Card(CardId("card-ben-debit"), BEN.id, "1881")
 ANA_DETAILS = {"customer_number": "C-1001", "date_of_birth": "1990-05-17", "postcode": "sw1a 1aa"}
@@ -25,7 +25,7 @@ ANA_DETAILS = {"customer_number": "C-1001", "date_of_birth": "1990-05-17", "post
 def kestrel(*cards: Card, clock: FixedClock | None = None) -> MCPServer:
     bank = InMemoryBank([ANA, BEN], cards)
     clock = clock or FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
-    return build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"))
+    return build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"), clock)
 
 
 async def verify(client: Client) -> RequestParamsMeta:
@@ -51,8 +51,9 @@ async def test_verified_customer_freezes_their_card() -> None:
             {
                 "card_id": "card-ana-debit",
                 "last_four": "4242",
-                "frozen": True,
+                "status": "frozen",
                 "frozen_by": "customer",
+                "replaces": None,
             }
         ]
     }
@@ -120,4 +121,11 @@ async def test_no_tool_exposes_a_customer_id_or_the_session_token() -> None:
         tools = (await client.list_tools()).tools
 
     parameters = {name for tool in tools for name in tool.input_schema.get("properties", {})}
-    assert parameters == {"customer_number", "date_of_birth", "postcode", "card_id"}
+    assert parameters == {
+        "customer_number",
+        "date_of_birth",
+        "postcode",
+        "card_id",
+        "reason",
+        "pending_action_id",
+    }

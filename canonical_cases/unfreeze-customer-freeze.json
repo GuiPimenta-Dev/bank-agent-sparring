@@ -7,7 +7,8 @@
         "id": "C-1001",
         "full_name": "Ana Souza",
         "date_of_birth": "1990-05-17",
-        "postcode": "SW1A 1AA"
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
       }
     ],
     "cards": [
@@ -27,6 +28,7 @@
   },
   "persona": {
     "name": "Ana Souza",
+    "customer_id": "C-1001",
     "temperament": "calm and cooperative",
     "patience": 6,
     "facts": {
@@ -54,7 +56,8 @@
         "id": "C-1001",
         "full_name": "Ana Souza",
         "date_of_birth": "1990-05-17",
-        "postcode": "SW1A 1AA"
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
       }
     ],
     "cards": [

@@ -7,7 +7,7 @@ import pytest
 
 import sparring.bank.domain
 from sparring.bank.domain.card import Card, CardId, FreezeSource
-from sparring.bank.domain.customer import Customer, CustomerId, IdentityClaim
+from sparring.bank.domain.customer import Customer, CustomerId, IdentityClaim, Tier
 from sparring.bank.domain.refusals import CardAlreadyFrozen, CardNotFrozen, FraudFreezeLocked
 
 ANA = CustomerId("C-1001")
@@ -43,7 +43,7 @@ def test_an_unfrozen_card_cannot_be_unfrozen() -> None:
 
 
 def test_identity_claim_must_match_every_detail() -> None:
-    ana = Customer(ANA, "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
+    ana = Customer(ANA, "Ana Souza", date(1990, 5, 17), "SW1A 1AA", Tier.STANDARD)
     assert ana.is_claimed_by(IdentityClaim(ANA, date(1990, 5, 17), "sw1a1aa"))
     assert not ana.is_claimed_by(IdentityClaim(ANA, date(1990, 5, 18), "SW1A 1AA"))
     assert not ana.is_claimed_by(IdentityClaim(ANA, date(1990, 5, 17), "SW1A 2AA"))

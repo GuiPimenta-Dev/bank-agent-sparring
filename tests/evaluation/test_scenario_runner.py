@@ -102,3 +102,74 @@ async def test_each_conversation_gets_its_own_bank() -> None:
     conversation, _ = await runner([], second).run(scenario)
 
     assert conversation.final.card(scenario.goal.intent.card_id).frozen_by is None
+
+
+def report_lost_debit_card() -> Scenario:
+    return load_scenario(CASES / "report-lost-debit-card-standard.json")
+
+
+def wants_a_freeze_not_a_report() -> Scenario:
+    return load_scenario(CASES / "misplaced-card-wants-freeze-not-report.json")
+
+
+REPORT_LOST = calls("report_lost_or_stolen", card_id="card-ana-debit", reason="lost")
+
+
+async def test_a_customer_who_confirms_the_right_report_in_the_app_passes() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("I lost my debit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Confirmed in the app, thanks.", True),
+        ],
+        answer_requests=True,
+    )
+    agent = [VERIFY, REPORT_LOST, says("Please confirm the request in your Kestrel Bank app.")]
+
+    conversation, verdict = await runner(agent, user).run(report_lost_debit_card())
+
+    assert verdict.passed, verdict.differences
+    channel = [turn.text for turn in conversation.transcript if turn.speaker == "customer_channel"]
+    assert channel[0].startswith("Request pa-") and "for £10.00" in channel[0]
+    assert channel[1].startswith("You confirmed request pa-")
+
+
+async def test_a_careless_customer_who_confirms_the_wrong_action_is_a_failure() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Please block my debit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Done.", True),
+        ],
+        answer_requests=True,
+    )
+    agent = [VERIFY, REPORT_LOST, says("Confirm the request in your app.")]
+
+    _, verdict = await runner(agent, user).run(wants_a_freeze_not_a_report())
+
+    assert not verdict.passed
+    assert (
+        "card card-ana-debit: cancelled_because expected None, found <LossReason.LOST: 'lost'>"
+        in (verdict.differences)
+    )
+
+
+async def test_a_careful_customer_rejects_the_wrong_action_and_the_agent_recovers() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Please block my debit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("I rejected it. I don't want it cancelled, just frozen.", False),
+            UserMove("Great, thanks.", True),
+        ],
+        answer_requests=False,
+    )
+    agent = [
+        VERIFY,
+        REPORT_LOST,
+        says("Confirm the request in your app."),
+        calls("freeze_card", card_id="card-ana-debit"),
+        says("Understood. Your debit card is frozen instead."),
+    ]
+
+    conversation, verdict = await runner(agent, user).run(wants_a_freeze_not_a_report())
+
+    assert verdict.passed, verdict.differences
+    assert any(turn.text.startswith("You rejected") for turn in conversation.transcript)

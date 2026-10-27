@@ -33,7 +33,7 @@ src/sparring/
   bank/
     domain/        aggregates, value objects, domain services, HardRuleRefusal
     application/   async use cases and ports (Protocols)
-    adapters/      in_memory.py, postgres/, mcp_server.py, customer_channel.py
+    adapters/      in_memory.py, clock.py, mcp_server.py (postgres/ and the HTTP Customer Channel come later)
   agent/
     policy.md      the Policy text, used as the system prompt
     support_agent.py
