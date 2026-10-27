@@ -44,6 +44,7 @@ src/sparring/
   run_scenario.py  composition root that runs one Scenario
   explore.py       composition root of Exploration
   failures.py      composition root of the Failure Signature report
+  check_regressions.py  composition root of the Regression Check
   system_under_test.py  a fresh bank and agent per Scenario, shared by composition roots
   tracing.py       Langfuse set-up shared by composition roots
 ```
