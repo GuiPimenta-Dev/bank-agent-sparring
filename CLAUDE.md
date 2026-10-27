@@ -26,7 +26,7 @@ Each GitHub issue is a vertical slice. A slice is delivered when all of this has
 3. The branch is pushed and a PR is opened whose body starts with `Closes #<issue>` and carries the delivery report: what each acceptance criterion gained, decisions worth recording (and any ADR added or superseded), what was deliberately left out, and the ceilings noted with `# ponytail:` comments.
 4. CI is green on the PR.
 
-The human reviews and merges.
+Then give the user the PR link. Never merge a PR: the user reviews and merges every one, to keep control of what lands on `main`.
 
 ## Rules for agents
 
