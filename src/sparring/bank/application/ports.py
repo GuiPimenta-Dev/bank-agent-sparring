@@ -5,6 +5,7 @@ from typing import Protocol, Self
 from sparring.bank.domain.card import Card, CardId
 from sparring.bank.domain.customer import Customer, CustomerId
 from sparring.bank.domain.dispute import Dispute
+from sparring.bank.domain.escalation import Escalation
 from sparring.bank.domain.fee import Fee
 from sparring.bank.domain.pending_action import PendingAction, PendingActionId
 from sparring.bank.domain.transaction import Transaction, TransactionId
@@ -50,6 +51,10 @@ class DisputeRepository(Protocol):
     async def add(self, dispute: Dispute) -> None: ...
 
 
+class EscalationRepository(Protocol):
+    async def add(self, escalation: Escalation) -> None: ...
+
+
 class UnitOfWork(Protocol):
     """One atomic unit of bank changes; leaving it without `commit()` discards them."""
 
@@ -70,6 +75,9 @@ class UnitOfWork(Protocol):
 
     @property
     def disputes(self) -> DisputeRepository: ...
+
+    @property
+    def escalations(self) -> EscalationRepository: ...
 
     async def __aenter__(self) -> Self: ...
 

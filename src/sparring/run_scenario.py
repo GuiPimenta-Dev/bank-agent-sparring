@@ -54,6 +54,8 @@ async def run(path: Path) -> bool:
     conversation, verdict = await runner.run(load_scenario(path))
     for turn in conversation.transcript:
         print(f"{turn.speaker}> {turn.text}\n")
+    if conversation.final.escalated:
+        print("Escalated to a human support agent.")
     if conversation.hard_rule_refusals:
         print("Hard Rule refusals:", ", ".join(conversation.hard_rule_refusals))
     print("PASS" if verdict.passed else "FAILURE", *verdict.differences, sep="\n  ")

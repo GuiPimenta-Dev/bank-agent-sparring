@@ -82,7 +82,8 @@ class ScenarioRunner:
     async def _play(
         self, conversation_id: str, scenario: Scenario, system: SystemUnderTest
     ) -> Conversation:
-        """The Simulated User ends the conversation; the turn limit is only a safety stop."""
+        """The Simulated User ends the conversation, unless the agent hands it to a human
+        first (ES-1); the turn limit is only a safety stop."""
         user = SimulatedUser(scenario, self._simulator)
         transcript: list[Turn] = []
         shown: set[str] = set()
@@ -104,6 +105,8 @@ class ScenarioRunner:
             if move.ends_conversation:
                 return self._ended(conversation_id, scenario, transcript, system, False)
             transcript.append(Turn("agent", await system.reply(move.message)))
+            if system.bank_snapshot().escalated:
+                return self._ended(conversation_id, scenario, transcript, system, False)
         return self._ended(conversation_id, scenario, transcript, system, True)
 
     @staticmethod

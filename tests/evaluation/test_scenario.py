@@ -39,11 +39,23 @@ def test_the_simulated_user_reads_the_agent_as_the_other_party() -> None:
     assert roles == ["user", "assistant", "user"]
 
 
-def test_a_dispute_goal_names_a_known_transaction_and_no_card(tmp_path: Path) -> None:
-    unknown = {"intent": {"operation": "dispute_transaction", "transaction_id": "tx-x"}}
-    with pytest.raises(ValueError, match="unknown transaction tx-x"):
-        load_scenario(write(tmp_path, {"goal": {**unknown, "narrative": "x"}}))
+@pytest.mark.parametrize(
+    ("intent", "error"),
+    [
+        ({"operation": "dispute_transaction", "transaction_ids": ["tx-x"]}, "unknown transaction"),
+        ({"operation": "dispute_transaction", "card_id": "card-ana-debit"}, "a Dispute names"),
+        ({"operation": "escalate", "card_id": "card-ana-debit"}, "an Escalation nothing"),
+        ({"operation": "freeze_card", "card_id": "card-ana-debit", "unrecognised": True}, "only"),
+    ],
+)
+def test_a_goal_names_what_its_operation_acts_on(
+    tmp_path: Path, intent: dict[str, object], error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        load_scenario(write(tmp_path, {"goal": {"intent": intent, "narrative": "x"}}))
 
-    with_a_card = {"operation": "dispute_transaction", "card_id": "card-ana-debit"}
-    with pytest.raises(ValueError, match="a Dispute names a transaction"):
-        load_scenario(write(tmp_path, {"goal": {"intent": with_a_card, "narrative": "x"}}))
+
+def test_a_scenario_starts_before_any_escalation(tmp_path: Path) -> None:
+    bank = {**json.loads(CASE.read_text())["bank"], "escalated": True}
+    with pytest.raises(ValueError, match="before any Escalation"):
+        load_scenario(write(tmp_path, {"bank": bank}))

@@ -48,7 +48,7 @@
   },
   "dimensions": {
     "operation": "unfreeze_card",
-    "policy_rule": "FR-3"
+    "policy_rule": "FR-3, FR-4"
   },
   "expected_outcome": {
     "customers": [
@@ -73,6 +73,7 @@
         "last_four": "0005",
         "frozen_by": "fraud_team"
       }
-    ]
+    ],
+    "escalated": true
   }
 }

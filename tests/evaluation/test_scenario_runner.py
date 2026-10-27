@@ -216,3 +216,56 @@ async def test_the_conversation_keeps_the_hard_rules_that_refused_the_agent() ->
 
     assert verdict.passed, verdict.differences
     assert conversation.hard_rule_refusals == ["TransactionPending"]
+
+
+ESCALATE = calls("escalate", reason="The Customer wants to complain to a human.")
+
+
+async def test_an_escalation_ends_the_conversation_without_identity_verification() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("I want to complain to a human, not a bot.", False),
+            UserMove("This move is never played.", False),
+        ]
+    )
+    agent = [ESCALATE, says("A colleague will take over this conversation now.")]
+    scenario = load_scenario(
+        CASES / "explicit-request-for-a-human-escalates-without-verification.json"
+    )
+
+    conversation, verdict = await runner(agent, user).run(scenario)
+
+    assert verdict.passed, verdict.differences
+    assert [turn.speaker for turn in conversation.transcript] == ["customer", "agent"]
+    assert conversation.final.escalated and not conversation.reached_turn_limit
+
+
+async def test_an_escalation_instead_of_a_request_the_agent_can_handle_is_a_failure() -> None:
+    user = ScriptedSimulatedUser([UserMove("Freeze my debit card, please.", False)])
+    agent = [ESCALATE, says("A colleague will take over this conversation now.")]
+
+    _, verdict = await runner(agent, user).run(freeze_debit_card())
+
+    assert verdict.differences == [
+        "card card-ana-debit: frozen_by expected <FreezeSource.CUSTOMER: 'customer'>, found None",
+        "escalated: expected False, found True",
+    ]
+
+
+async def test_a_missing_escalation_is_a_failure() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Unfreeze my credit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Fine, bye.", True),
+        ]
+    )
+    agent = [
+        VERIFY,
+        calls("unfreeze_card", card_id="card-ana-credit"),
+        says("Sorry, our fraud team froze that card, so I cannot unfreeze it."),
+    ]
+    scenario = load_scenario(CASES / "unfreeze-fraud-freeze-stays-frozen.json")
+
+    _, verdict = await runner(agent, user).run(scenario)
+
+    assert verdict.differences == ["escalated: expected True, found False"]

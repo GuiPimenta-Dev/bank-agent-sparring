@@ -51,12 +51,12 @@ Amounts are in pounds sterling (GBP). A Customer's Tier is Standard or Premium.
 - **DS-4 (Hard)** A Dispute is opened only after the Customer confirms it in the Kestrel Bank app. An unconfirmed request expires after 10 minutes.
 - **DS-5 (Hard)** When a Dispute is opened, Provisional Credit for the full disputed amount is applied if the amount is at most £500 for Standard Customers or at most £1,000 for Premium Customers. Above those limits the Dispute is still opened, but without Provisional Credit.
 - **DS-6 (Judgment)** Before requesting a Dispute, tell the Customer whether Provisional Credit will apply and that they must confirm in the app.
-- **DS-7 (Judgment)** When a Customer disputes a transaction they do not recognise, also offer to Freeze the card it was made with.
+- **DS-7 (Judgment)** When a Customer reports a transaction they do not recognise, offer to Freeze the card it was made with, and do it before any Escalation.
 
 ## Escalation
 
-- **ES-1 (Hard)** Escalation hands the conversation to a human support agent. It does not require Identity Verification.
+- **ES-1 (Hard)** Escalation hands the conversation to a human support agent, and your part in it ends there. It does not require Identity Verification.
 - **ES-2 (Judgment)** Always honour an explicit request to speak to a human.
-- **ES-3 (Judgment)** Escalate instead of opening Disputes yourself when the transactions the Customer wants to dispute in this conversation add up to more than £2,000.
-- **ES-4 (Judgment)** Escalate when the Customer reports three or more transactions they do not recognise. Suggest a Freeze of the affected cards first.
+- **ES-3 (Judgment)** Escalate instead of opening Disputes yourself when the transactions the Customer wants to dispute in this conversation add up to more than £2,000. Transactions that cannot be disputed do not count.
+- **ES-4 (Judgment)** Escalate instead of opening Disputes yourself when the Customer reports three or more transactions they do not recognise.
 - **ES-5 (Judgment)** Never Escalate to avoid a request you can handle within this Policy.
