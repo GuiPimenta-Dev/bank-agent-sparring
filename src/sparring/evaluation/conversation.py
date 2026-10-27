@@ -1,13 +1,14 @@
 import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from sparring.evaluation.cost import Usage
 from sparring.evaluation.failure_signature import failure_signature
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.invariants import InvariantViolation, invariant_violations
+from sparring.evaluation.judges import ToneJudge, ToneJudgement
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.recording import Recorder
 from sparring.evaluation.scenario import BankSnapshot, Scenario
@@ -56,11 +57,13 @@ class Conversation:
     """The infrastructure failure that cut the conversation short, if one did."""
     trace_id: str | None = None
     """Where the conversation was recorded."""
+    judge_usage: tuple[Usage, ...] = ()
 
     @property
     def usage(self) -> list[Usage]:
-        """What the agent and the Simulated User consumed, turn by turn."""
-        return [turn.usage for turn in self.transcript if turn.usage is not None]
+        """What the agent and the Simulated User consumed, turn by turn, and then the judges."""
+        turns = [turn.usage for turn in self.transcript if turn.usage is not None]
+        return [*turns, *self.judge_usage]
 
     @property
     def hard_rule_refusals(self) -> list[str]:
@@ -83,6 +86,8 @@ class Verdict:
     violations: list[InvariantViolation]
     signature: str | None = None
     """The Failure Signature, on a Failure only."""
+    tone: ToneJudgement | None = None
+    """The tone judge's view, which never decides a pass or a Failure (ADR-0002)."""
 
     @property
     def failed(self) -> bool:
@@ -103,12 +108,14 @@ class ScenarioRunner:
         simulator: SimulatedUserModel,
         oracle: Oracle,
         recorder: Recorder,
+        tone_judge: ToneJudge | None = None,
         turn_limit: int = 20,
     ) -> None:
         self._open_system = open_system
         self._simulator = simulator
         self._oracle = oracle
         self._recorder = recorder
+        self._tone_judge = tone_judge
         self._turn_limit = turn_limit
 
     async def run(self, scenario: Scenario) -> tuple[Conversation, Verdict]:
@@ -119,8 +126,21 @@ class ScenarioRunner:
         ):
             conversation = await self._play(conversation_id, scenario, system, trace_id)
             verdict = self._judge(conversation)
+            tone = await self._tone(conversation) if not verdict.inconclusive else None
+            if tone is not None:
+                verdict = replace(verdict, tone=tone)
+                conversation = replace(conversation, judge_usage=(*_used(tone),))
             self._recorder.record(conversation, verdict)
         return conversation, verdict
+
+    async def _tone(self, conversation: Conversation) -> ToneJudgement | None:
+        """No tone score rather than no conversation when the judge's provider is down."""
+        if self._tone_judge is None:
+            return None
+        try:
+            return await self._tone_judge.judge(conversation.transcript)
+        except InfrastructureFailure:
+            return None
 
     def _judge(self, conversation: Conversation) -> Verdict:
         if conversation.interrupted_by is not None:
@@ -197,3 +217,7 @@ class ScenarioRunner:
             if system.bank_snapshot().escalated:
                 return False
         return True
+
+
+def _used(judgement: ToneJudgement) -> list[Usage]:
+    return [judgement.usage] if judgement.usage else []

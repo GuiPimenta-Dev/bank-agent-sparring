@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import anthropic
@@ -11,11 +11,13 @@ from mcp import Client
 from sparring.agent.support_agent import CAP_REACHED_REPLY, TOOL_CALL_CAP, SupportAgent
 from sparring.bank.domain.card import CardId
 from sparring.evaluation.conversation import ScenarioRunner
+from sparring.evaluation.cost import Usage
 from sparring.evaluation.inconclusive import InfrastructureFailure
+from sparring.evaluation.judges import ToneJudge, ToneJudgement
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.recording import InMemoryRecorder
 from sparring.evaluation.scenario import Scenario, load_scenario
-from sparring.evaluation.simulated_user import UserMove
+from sparring.evaluation.simulated_user import Turn, UserMove
 from sparring.system_under_test import kestrel
 
 pytestmark = pytest.mark.anyio
@@ -34,6 +36,7 @@ def runner(
     agent: list[AIMessage] | ScriptedModel,
     user: ScriptedSimulatedUser,
     recorder: InMemoryRecorder | None = None,
+    tone_judge: ToneJudge | None = None,
 ) -> ScenarioRunner:
     model = scripted(*agent) if isinstance(agent, list) else agent
 
@@ -45,6 +48,7 @@ def runner(
         user,
         Oracle(),
         recorder or InMemoryRecorder(),
+        tone_judge=tone_judge,
         turn_limit=4,
     )
 
@@ -373,3 +377,66 @@ async def test_a_simulated_user_provider_outage_makes_the_conversation_inconclus
     assert verdict.inconclusive
     assert conversation.interrupted_by == "OpenAI is unreachable"
     assert [turn.speaker for turn in conversation.transcript] == ["customer", "agent"]
+
+
+TONE_USAGE = Usage("simulator", input_tokens=900, output_tokens=60)
+
+
+class Tone:
+    """A tone judge that likes everything, or is unreachable."""
+
+    def __init__(self, reachable: bool = True) -> None:
+        self._reachable = reachable
+        self.judged: list[Sequence[Turn]] = []
+
+    async def judge(self, transcript: Sequence[Turn]) -> ToneJudgement:
+        self.judged.append(transcript)
+        if not self._reachable:
+            raise InfrastructureFailure("OpenAI is unreachable")
+        return ToneJudgement(5, "Warm and brief.", TONE_USAGE)
+
+
+def freezing_user() -> ScriptedSimulatedUser:
+    return ScriptedSimulatedUser(
+        [
+            UserMove("Freeze my debit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Bye", True),
+        ]
+    )
+
+
+FREEZING_AGENT = [VERIFY, calls("freeze_card", card_id="card-ana-debit"), says("Frozen.")]
+
+
+async def test_every_conversation_gets_a_tone_that_never_decides_the_verdict() -> None:
+    tone = Tone()
+    recorder = InMemoryRecorder()
+
+    conversation, verdict = await runner(FREEZING_AGENT, freezing_user(), recorder, tone).run(
+        freeze_debit_card()
+    )
+
+    assert verdict.passed and verdict.tone == ToneJudgement(5, "Warm and brief.", TONE_USAGE)
+    assert tone.judged == [conversation.transcript]
+    assert conversation.usage[-1] == TONE_USAGE
+    assert recorder.records == [(conversation, verdict)]
+
+
+async def test_a_tone_judge_outage_leaves_only_the_tone_out() -> None:
+    conversation, verdict = await runner(
+        FREEZING_AGENT, freezing_user(), tone_judge=Tone(False)
+    ).run(freeze_debit_card())
+
+    assert verdict.passed and verdict.tone is None
+    assert conversation.judge_usage == ()
+
+
+async def test_an_inconclusive_conversation_is_not_judged_for_tone() -> None:
+    tone = Tone()
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    outage = unreachable(anthropic.APIConnectionError(request=request))
+    user = ScriptedSimulatedUser([UserMove("Freeze my debit card, please.", False)])
+
+    _, verdict = await runner(outage, user, tone_judge=tone).run(freeze_debit_card())
+
+    assert verdict.inconclusive and tone.judged == []

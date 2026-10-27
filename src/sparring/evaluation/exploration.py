@@ -21,13 +21,15 @@ Outcome = Literal["pass", "failure", "inconclusive", "discarded"]
 
 
 def typical_conversation(agent_model: str, simulator_model: str) -> list[Usage]:
-    """A generous guess at what one generated Scenario consumes, from its story to the end
-    of its conversation. It sets the estimate shown before a run and what each launch
-    reserves from the budget."""
+    """A generous guess at what one generated Scenario consumes, from its story to its
+    judges: the agent, the Simulated User, the story writer, and the tone and Policy Drift
+    judges. It sets the estimate shown before a run and what each launch reserves from the
+    budget."""
     return [
         Usage(agent_model, input_tokens=80_000, output_tokens=5_000),
         Usage(simulator_model, input_tokens=20_000, output_tokens=8_000),
         Usage(simulator_model, input_tokens=1_000 * STORY_ATTEMPTS, output_tokens=1_200),
+        Usage(simulator_model, input_tokens=9_000, output_tokens=1_000),
     ]
 
 
@@ -143,7 +145,7 @@ class Exploration:
             return "inconclusive", [str(conversation.interrupted_by)], None
         if not verdict.failed:
             return "pass", [], None
-        decision = await self._promotion.consider(conversation, verdict, reproduce)
+        decision = await self._promotion.consider(conversation, verdict, reproduce, usage)
         violations = [f"{v.invariant}: {v.detail}" for v in verdict.violations]
         return "failure", [*verdict.differences, *violations], decision
 

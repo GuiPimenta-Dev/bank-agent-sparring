@@ -9,6 +9,7 @@ from sparring.evaluation.scenario import Scenario, scenario_to_json
 
 if TYPE_CHECKING:
     from sparring.evaluation.conversation import Conversation, Verdict
+    from sparring.evaluation.judges import DriftJudgement
 
 
 class Recorder(Protocol):
@@ -27,6 +28,10 @@ class Recorder(Protocol):
         """What Promotion decided about the Failure recorded under `trace_id`."""
         ...
 
+    def drift_judged(self, trace_id: str | None, judgement: "DriftJudgement") -> None:
+        """What the Policy Drift judge said about the Failure recorded under `trace_id`."""
+        ...
+
 
 class LangfuseRecorder:
     """One Langfuse trace per conversation; the agent's turns nest inside it.
@@ -35,6 +40,7 @@ class LangfuseRecorder:
     only conclusive ones get `oracle_pass` (ADR-0017). Each Hard Rule refusal and each
     Invariant violation is a categorical score named after the rule or Invariant, and every
     Failure a `failure_signature`, so they can be counted across conversations (ADR-0012).
+    The LLM judges' `tone` and `drift_suspected` carry their reasoning as the comment.
     """
 
     def __init__(self, langfuse: Langfuse, metadata: Mapping[str, str]) -> None:
@@ -90,10 +96,26 @@ class LangfuseRecorder:
             self._langfuse.score_current_trace(
                 name="failure_signature", value=verdict.signature, data_type="CATEGORICAL"
             )
+        if verdict.tone is not None:
+            self._langfuse.score_current_trace(
+                name="tone",
+                value=verdict.tone.score,
+                data_type="NUMERIC",
+                comment=verdict.tone.reasoning,
+            )
 
     def promotion_decided(self, trace_id: str | None, decision: str) -> None:
         self._langfuse.create_score(
             trace_id=trace_id, name="promotion", value=decision, data_type="CATEGORICAL"
+        )
+
+    def drift_judged(self, trace_id: str | None, judgement: "DriftJudgement") -> None:
+        self._langfuse.create_score(
+            trace_id=trace_id,
+            name="drift_suspected",
+            value=1 if judgement.suspected else 0,
+            data_type="BOOLEAN",
+            comment=judgement.reasoning,
         )
 
 
@@ -101,6 +123,7 @@ class InMemoryRecorder:
     def __init__(self) -> None:
         self.records: list[tuple[Conversation, Verdict]] = []
         self.promotions: dict[str | None, str] = {}
+        self.drift: dict[str | None, DriftJudgement] = {}
 
     @asynccontextmanager
     async def conversation(
@@ -113,3 +136,6 @@ class InMemoryRecorder:
 
     def promotion_decided(self, trace_id: str | None, decision: str) -> None:
         self.promotions[trace_id] = decision
+
+    def drift_judged(self, trace_id: str | None, judgement: "DriftJudgement") -> None:
+        self.drift[trace_id] = judgement

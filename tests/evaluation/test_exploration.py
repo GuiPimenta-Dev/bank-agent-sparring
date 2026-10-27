@@ -12,9 +12,11 @@ from sparring.evaluation.cost import Budget, Price, PriceTable, Usage
 from sparring.evaluation.exploration import Exploration
 from sparring.evaluation.golden_set import InMemoryGoldenSet
 from sparring.evaluation.inconclusive import InfrastructureFailure
+from sparring.evaluation.judges import DriftJudgement
 from sparring.evaluation.narrative import NarrativeModel, Story
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.promotion import Promotion
+from sparring.evaluation.quarantine import InMemoryQuarantine
 from sparring.evaluation.recording import InMemoryRecorder
 from sparring.evaluation.simulated_user import Turn, UserMove
 from sparring.system_under_test import kestrel
@@ -49,6 +51,13 @@ class Narrator:
         return Story(self._story, Usage("simulator", input_tokens=10_000))
 
 
+class Unbiased:
+    """A Policy Drift judge that never suspects drift."""
+
+    async def judge(self, transcript: Sequence[Turn], findings: Sequence[str]) -> DriftJudgement:
+        return DriftJudgement(False, "The agent broke a rule.")
+
+
 class LeavingUser:
     """A Simulated User who leaves at once, at $0.05 a move."""
 
@@ -74,7 +83,9 @@ def exploration(
     runner = ScenarioRunner(
         kestrel(connect_agent, "scripted"), user or LeavingUser(), Oracle(), recorder
     )
-    promotion = Promotion(golden_set or InMemoryGoldenSet(), Oracle(), recorder)
+    promotion = Promotion(
+        golden_set or InMemoryGoldenSet(), Oracle(), Unbiased(), InMemoryQuarantine(), recorder
+    )
     return Exploration(runner, narrator, promotion, PRICES, parallelism)
 
 

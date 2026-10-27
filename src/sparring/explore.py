@@ -1,8 +1,9 @@
 """Exploration: run generated Scenarios against the agent under a hard dollar cap.
 
-Composition root: the agent on Claude, the Simulated User and the story writer on the
-pinned OpenAI model, one Langfuse trace per conversation, and Promotion into the Golden Set
-Dataset in Langfuse, which Exploration therefore needs (ADR-0005).
+Composition root: the agent on Claude; the Simulated User, the story writer and the LLM
+judges on the pinned OpenAI model (ADR-0006); one Langfuse trace per conversation; and
+Promotion into the Golden Set Dataset in Langfuse, which Exploration therefore needs
+(ADR-0005), with Quarantine as a Langfuse annotation queue.
 It calls paid APIs, so only the user runs it, with a cap that fits the project's budget
 (ADR-0020, ADR-0024).
 """
@@ -18,14 +19,16 @@ from decimal import Decimal
 from mcp import Client
 from openai import AsyncOpenAI
 
-from sparring.agent.support_agent import SupportAgent
+from sparring.agent.support_agent import POLICY, SupportAgent
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.cost import Budget, PriceTable, UnpricedModel
 from sparring.evaluation.exploration import Exploration, ExplorationReport, typical_conversation
 from sparring.evaluation.golden_set import LangfuseGoldenSet
+from sparring.evaluation.judges import OpenAIPolicyDriftJudge, OpenAIToneJudge
 from sparring.evaluation.narrative import OpenAINarrativeModel
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.promotion import Promotion
+from sparring.evaluation.quarantine import LangfuseQuarantine
 from sparring.evaluation.recording import LangfuseRecorder
 from sparring.evaluation.simulated_user import OpenAISimulatedUserModel
 from sparring.system_under_test import kestrel
@@ -76,8 +79,15 @@ async def explore(args: argparse.Namespace) -> None:
         OpenAISimulatedUserModel(openai, simulator_model),
         Oracle(),
         recorder,
+        tone_judge=OpenAIToneJudge(openai, simulator_model),
     )
-    promotion = Promotion(LangfuseGoldenSet(langfuse), Oracle(), recorder)
+    promotion = Promotion(
+        LangfuseGoldenSet(langfuse),
+        Oracle(),
+        OpenAIPolicyDriftJudge(openai, simulator_model, POLICY),
+        LangfuseQuarantine(langfuse),
+        recorder,
+    )
     exploration = Exploration(
         runner,
         OpenAINarrativeModel(openai, simulator_model),
