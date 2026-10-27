@@ -1,14 +1,20 @@
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
 from sparring.evaluation.conversation import Conversation, Verdict
+from sparring.evaluation.cost import Usage
 from sparring.evaluation.golden_set import GoldenItem, InMemoryGoldenSet
+from sparring.evaluation.inconclusive import InfrastructureFailure
+from sparring.evaluation.judges import DriftJudgement
 from sparring.evaluation.oracle import Oracle
-from sparring.evaluation.promotion import PER_SIGNATURE, REPRODUCTIONS, Promotion
+from sparring.evaluation.promotion import PER_SIGNATURE, REPRODUCTIONS, Decision, Promotion
+from sparring.evaluation.quarantine import InMemoryQuarantine
 from sparring.evaluation.recording import InMemoryRecorder
 from sparring.evaluation.scenario import Scenario, load_scenario
+from sparring.evaluation.simulated_user import Turn
 
 pytestmark = pytest.mark.anyio
 
@@ -36,9 +42,45 @@ class Reruns:
         return next(self._verdicts)
 
 
-def promotion() -> tuple[Promotion, InMemoryGoldenSet, InMemoryRecorder]:
-    golden_set, recorder = InMemoryGoldenSet(), InMemoryRecorder()
-    return Promotion(golden_set, Oracle(), recorder), golden_set, recorder
+JUDGE_USAGE = Usage("simulator", input_tokens=5_000, output_tokens=200)
+
+
+class DriftJudge:
+    """Always gives the same view, or is unreachable when `suspected` is None."""
+
+    def __init__(self, suspected: bool | None = False) -> None:
+        self._suspected = suspected
+        self.asked: list[Sequence[str]] = []
+
+    async def judge(self, transcript: Sequence[Turn], findings: Sequence[str]) -> DriftJudgement:
+        self.asked.append(findings)
+        if self._suspected is None:
+            raise InfrastructureFailure("OpenAI is unreachable")
+        return DriftJudgement(self._suspected, "The Policy text is silent on this.", JUDGE_USAGE)
+
+
+class Gate:
+    """A Promotion over in-memory adapters, and everything it touched."""
+
+    def __init__(self, judge: DriftJudge | None = None) -> None:
+        self.golden_set = InMemoryGoldenSet()
+        self.recorder = InMemoryRecorder()
+        self.quarantine = InMemoryQuarantine()
+        self.judge = judge or DriftJudge()
+        self.usage: list[Usage] = []
+        self.promotion = Promotion(
+            self.golden_set, Oracle(), self.judge, self.quarantine, self.recorder
+        )
+
+    async def consider(
+        self, conversation: Conversation, verdict: Verdict, reruns: "Reruns"
+    ) -> Decision | None:
+        return await self.promotion.consider(conversation, verdict, reruns, self.usage)
+
+
+def promotion() -> tuple[Gate, InMemoryGoldenSet, InMemoryRecorder]:
+    gate = Gate()
+    return gate, gate.golden_set, gate.recorder
 
 
 async def test_a_failure_that_reproduces_is_promoted_as_a_self_contained_scenario() -> None:
@@ -123,3 +165,52 @@ async def test_concurrent_failures_with_one_signature_respect_the_cap() -> None:
 
     assert sorted(d or "" for d in decisions) == ["promoted", "signature_full", "signature_full"]
     assert len(golden_set.added) == PER_SIGNATURE
+
+
+async def test_a_failure_the_policy_text_seems_to_justify_is_quarantined_not_promoted() -> None:
+    gate = Gate(DriftJudge(suspected=True))
+
+    assert await gate.consider(failure(), FAILED, Reruns(FAILED)) == "quarantined"
+
+    assert gate.golden_set.added == []
+    assert gate.quarantine.held == ["trace-1"]
+    assert gate.recorder.drift["trace-1"].suspected
+    assert gate.recorder.promotions == {"trace-1": "quarantined"}
+
+
+async def test_the_drift_judge_sees_the_findings_and_its_cost_is_counted() -> None:
+    gate = Gate()
+
+    assert await gate.consider(failure(), FAILED, Reruns(FAILED)) == "promoted"
+
+    assert gate.judge.asked == [FAILED.differences]
+    assert not gate.recorder.drift["trace-1"].suspected
+    assert gate.usage == [JUDGE_USAGE]
+
+
+async def test_an_unreachable_drift_judge_blocks_the_promotion() -> None:
+    gate = Gate(DriftJudge(suspected=None))
+
+    assert await gate.consider(failure(), FAILED, Reruns(FAILED)) == "judge_unavailable"
+
+    assert gate.golden_set.added == [] and gate.quarantine.held == []
+
+
+async def test_no_judge_result_can_cause_a_promotion() -> None:
+    """Whatever the judge says, only a reproduced deterministic Failure is promoted."""
+    inconclusive = Verdict(True, [], [])
+    for suspected in (True, False):
+        for verdict, reruns in [
+            (PASSED, Reruns(FAILED)),
+            (inconclusive, Reruns(FAILED)),
+            (FAILED, Reruns(*[PASSED] * REPRODUCTIONS)),
+            (FAILED, Reruns(None)),
+        ]:
+            gate = Gate(DriftJudge(suspected))
+
+            await gate.consider(failure(), verdict, reruns)
+
+            assert gate.golden_set.added == [], (suspected, verdict, reruns)
+        suspicious = Gate(DriftJudge(suspected))
+        await suspicious.consider(failure(), FAILED, Reruns(FAILED))
+        assert bool(suspicious.golden_set.added) is not suspected
