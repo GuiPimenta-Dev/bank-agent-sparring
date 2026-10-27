@@ -36,6 +36,12 @@ The demo stack (bank, agent API, Postgres and Langfuse) with the two-panel page 
 docker compose up -d --build --wait
 ```
 
+Re-record the demo GIF against that stack: the real agent on the default model, about one cent per recording, so only with the user's approval. The flow asserts it succeeded:
+
+```bash
+uv run python scripts/record_demo.py
+```
+
 Talk to the agent in the terminal instead (first time: `cp .env.example .env` and set `ANTHROPIC_API_KEY`). It calls a paid API, so only the user runs it:
 
 ```bash
