@@ -17,6 +17,13 @@ uv run pyright
 uv run lint-imports
 ```
 
+The repository contract suite's Postgres leg runs only with a database; CI always runs it. Locally:
+
+```bash
+docker compose -f infra/postgres/docker-compose.yml up -d --wait
+SPARRING_TEST_DATABASE_URL=postgresql+asyncpg://sparring:sparring@localhost:55432/sparring uv run pytest
+```
+
 Local Langfuse (first time: `cp infra/langfuse/.env.example infra/langfuse/.env`), UI at http://localhost:3000:
 
 ```bash

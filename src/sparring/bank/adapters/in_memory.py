@@ -135,6 +135,9 @@ class InMemoryFeeRepository:
     def __init__(self, fees: dict[FeeId, Fee]) -> None:
         self._fees = fees
 
+    async def list_for(self, customer_id: CustomerId) -> list[Fee]:
+        return [fee for fee in self._fees.values() if fee.customer_id == customer_id]
+
     async def add(self, fee: Fee) -> None:
         self._fees[fee.id] = fee
 
@@ -164,6 +167,9 @@ class InMemoryDisputeRepository:
 class InMemoryEscalationRepository:
     def __init__(self, escalations: dict[EscalationId, Escalation]) -> None:
         self._escalations = escalations
+
+    async def get(self, escalation_id: EscalationId) -> Escalation | None:
+        return self._escalations.get(escalation_id)
 
     async def add(self, escalation: Escalation) -> None:
         self._escalations[escalation.id] = escalation
