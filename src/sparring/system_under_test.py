@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from mcp import Client
 
-from sparring.agent.support_agent import SupportAgent
+from sparring.agent.support_agent import AgentUnavailable, SupportAgent
 from sparring.bank.adapters.clock import FixedClock
 from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
@@ -20,7 +20,9 @@ from sparring.bank.application.bank import Bank
 from sparring.bank.domain.customer import CustomerId
 from sparring.bank.domain.pending_action import PendingActionId
 from sparring.evaluation.conversation import ConfirmationRequest, SystemFactory, SystemUnderTest
+from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.scenario import BankSnapshot, Scenario
+from sparring.evaluation.simulated_user import ToolCall, Turn
 
 AgentFactory = Callable[[Client], Awaitable[SupportAgent]]
 
@@ -39,12 +41,14 @@ class KestrelUnderTest:
         self._state = state
         self._customer_id = customer_id
         self._conversation_id = conversation_id
-        self._refusals: list[str] = []
 
-    async def reply(self, message: str) -> str:
-        turn = await self._agent.reply(self._conversation_id, message)
-        self._refusals += turn.hard_rule_refusals
-        return turn.reply
+    async def reply(self, message: str) -> Turn:
+        try:
+            turn = await self._agent.reply(self._conversation_id, message)
+        except AgentUnavailable as error:
+            raise InfrastructureFailure(str(error)) from error
+        calls = (ToolCall(call.name, call.arguments, call.refused_by) for call in turn.tool_calls)
+        return Turn("agent", turn.reply, tuple(calls))
 
     async def confirmation_requests(self) -> list[ConfirmationRequest]:
         actions = await self._bank.awaiting_confirmation(self._customer_id)
@@ -64,9 +68,6 @@ class KestrelUnderTest:
             list(state.disputes.values()),
             escalated=bool(state.escalations),
         )
-
-    def hard_rule_refusals(self) -> list[str]:
-        return list(self._refusals)
 
 
 def kestrel(connect_agent: AgentFactory) -> SystemFactory:

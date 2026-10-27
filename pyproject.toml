@@ -5,6 +5,7 @@ description = "A bank card-support agent stress-tested by simulated users; failu
 readme = "CLAUDE.md"
 requires-python = ">=3.13"
 dependencies = [
+    "anthropic>=1.17.0",
     "langchain>=1.4.7",
     "langchain-anthropic>=1.7.6",
     "langfuse>=5.0.4",

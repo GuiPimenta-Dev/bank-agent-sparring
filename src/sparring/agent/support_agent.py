@@ -1,27 +1,50 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import anthropic
 from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariableType]
+from langchain.agents.middleware import AgentState, after_model
 from langchain_anthropic import ChatAnthropic
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.runtime import Runtime
 from mcp import Client
 
 from sparring.agent.bank_tools import BankTools
 
 POLICY = (Path(__file__).parent / "policy.md").read_text()
 
+TOOL_CALL_CAP = 8
+"""The most tool calls one turn may request (ADR-0026). Evaluation checks the same cap
+independently, as an Invariant."""
+
+CAP_REACHED_REPLY = "Sorry, I couldn't finish that. Could you tell me once more what you need?"
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    name: str
+    arguments: dict[str, Any]
+    refused_by: str | None
+    """The Hard Rule that refused the call, if one did."""
+
 
 @dataclass(frozen=True)
 class AgentTurn:
     reply: str
-    hard_rule_refusals: list[str]
-    """The Hard Rules that refused the agent's tool calls in this turn, in order."""
+    tool_calls: list[ToolCall]
+    """Every tool call the agent requested in this turn, in order, including the ones the
+    tool-call cap kept from running."""
+
+
+class AgentUnavailable(Exception):
+    """The model provider still failed after the SDK's own retries (ADR-0017)."""
 
 
 class SupportAgent:
@@ -56,7 +79,11 @@ class SupportAgent:
         """An agent on any chat model, such as a scripted one in tests."""
         tools = await BankTools(bank).load()
         graph = create_agent(  # pyright: ignore[reportUnknownVariableType]
-            model, tools, system_prompt=POLICY, checkpointer=InMemorySaver()
+            model,
+            tools,
+            system_prompt=POLICY,
+            middleware=[_cap_tool_calls],
+            checkpointer=InMemorySaver(),
         )
         return cls(graph, [CallbackHandler()] if tracing else [])
 
@@ -66,12 +93,55 @@ class SupportAgent:
             "callbacks": self._callbacks,
             "metadata": {"langfuse_session_id": conversation_id},
         }
-        state = await self._graph.ainvoke({"messages": [HumanMessage(message)]}, config=config)
-        messages: list[BaseMessage] = state["messages"]
-        turn_start = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
-        refusals = [
-            m.artifact
-            for m in messages[turn_start:]
-            if isinstance(m, ToolMessage) and isinstance(m.artifact, str)
+        try:
+            state = await self._graph.ainvoke({"messages": [HumanMessage(message)]}, config=config)
+        except anthropic.APIError as error:
+            if _retries_ran_out(error):
+                raise AgentUnavailable(str(error)) from error
+            raise
+        turn = _this_turn(state["messages"])
+        results = {m.tool_call_id: m for m in turn if isinstance(m, ToolMessage)}
+        tool_calls = [
+            ToolCall(call["name"], call["args"], _refusal(results.get(str(call["id"]))))
+            for m in turn
+            if isinstance(m, AIMessage)
+            for call in m.tool_calls
         ]
-        return AgentTurn(messages[-1].text, refusals)
+        return AgentTurn(turn[-1].text, tool_calls)
+
+
+@after_model(can_jump_to=["end"])
+def _cap_tool_calls(state: AgentState[Any], runtime: Runtime[Any]) -> dict[str, Any] | None:
+    """Ends the turn with a fallback reply instead of running the calls that would take it
+    past the cap, and answers them so the conversation stays valid for the next turn."""
+    turn = _this_turn(state["messages"])
+    requested = [call for m in turn if isinstance(m, AIMessage) for call in m.tool_calls]
+    last = turn[-1]
+    if not isinstance(last, AIMessage) or not last.tool_calls or len(requested) <= TOOL_CALL_CAP:
+        return None
+    not_run = [
+        ToolMessage(
+            "Not run: this turn reached its tool-call cap.",
+            tool_call_id=call["id"],
+            name=call["name"],
+            status="error",
+        )
+        for call in last.tool_calls
+    ]
+    return {"messages": [*not_run, AIMessage(CAP_REACHED_REPLY)], "jump_to": "end"}
+
+
+def _this_turn(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
+    start = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
+    return messages[start:]
+
+
+def _refusal(result: ToolMessage | None) -> str | None:
+    return result.artifact if result and isinstance(result.artifact, str) else None
+
+
+def _retries_ran_out(error: anthropic.APIError) -> bool:
+    """Whether the error is one the SDK retries, so it was raised only once retries ran out."""
+    if isinstance(error, anthropic.APIStatusError):
+        return error.status_code in (408, 409, 429) or error.status_code >= 500
+    return isinstance(error, anthropic.APIConnectionError)

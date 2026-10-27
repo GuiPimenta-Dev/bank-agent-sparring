@@ -26,7 +26,8 @@ from sparring.tracing import langfuse_client
 REQUIRED = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "SPARRING_SIMULATOR_MODEL")
 
 
-async def run(path: Path) -> bool:
+async def run(path: Path) -> int:
+    """Exits 0 on a pass, 1 on a Failure and 2 when the conversation is Inconclusive."""
     agent_model = os.environ.get("SPARRING_AGENT_MODEL", "claude-haiku-5-5")
     agent_effort = os.environ.get("SPARRING_AGENT_EFFORT")
     simulator_model = os.environ["SPARRING_SIMULATOR_MODEL"]
@@ -58,8 +59,12 @@ async def run(path: Path) -> bool:
         print("Escalated to a human support agent.")
     if conversation.hard_rule_refusals:
         print("Hard Rule refusals:", ", ".join(conversation.hard_rule_refusals))
-    print("PASS" if verdict.passed else "FAILURE", *verdict.differences, sep="\n  ")
-    return verdict.passed
+    if verdict.inconclusive:
+        print("INCONCLUSIVE", conversation.interrupted_by, sep="\n  ")
+        return 2
+    violations = [f"{v.invariant}: {v.detail}" for v in verdict.violations]
+    print("PASS" if verdict.passed else "FAILURE", *verdict.differences, *violations, sep="\n  ")
+    return 0 if verdict.passed else 1
 
 
 def main() -> None:
@@ -69,7 +74,7 @@ def main() -> None:
     missing = [name for name in REQUIRED if not os.environ.get(name)]
     if missing:
         sys.exit(f"Set {', '.join(missing)} (see .env.example).")
-    sys.exit(0 if asyncio.run(run(args.scenario)) else 1)
+    sys.exit(asyncio.run(run(args.scenario)))
 
 
 def _git_sha() -> str:
