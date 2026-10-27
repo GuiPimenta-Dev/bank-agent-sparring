@@ -19,10 +19,10 @@ from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
 from sparring.bank.application.bank import Bank
 from sparring.bank.domain.card import Card, CardId, FreezeSource
-from sparring.bank.domain.customer import Customer, CustomerId
+from sparring.bank.domain.customer import Customer, CustomerId, Tier
 from sparring.tracing import langfuse_client
 
-ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
+ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA", Tier.STANDARD)
 ANA_CARDS = [
     Card(CardId("card-ana-debit"), ANA.id, "4242"),
     Card(CardId("card-ana-credit"), ANA.id, "0005", FreezeSource.FRAUD_TEAM),
@@ -31,6 +31,7 @@ ANA_CARDS = [
 BANNER = f"""Kestrel Bank card support. Type 'exit' to leave.
 You are {ANA.full_name}: customer number {ANA.id}, born {ANA.date_of_birth:%Y-%m-%d}, \
 postcode {ANA.postcode}. Your credit card was frozen by the fraud team.
+Requests the agent makes on your behalf appear below as your Kestrel Bank app.
 """
 
 
@@ -38,10 +39,10 @@ async def chat() -> None:
     tracing = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
     if tracing:
         langfuse_client()
-    bank = InMemoryBank([ANA], ANA_CARDS)
-    server = build_mcp_server(
-        Bank(bank.unit_of_work, SystemClock()), SessionTokens(secrets.token_bytes(32))
-    )
+    state = InMemoryBank([ANA], ANA_CARDS)
+    clock = SystemClock()
+    bank = Bank(state.unit_of_work, clock)
+    server = build_mcp_server(bank, SessionTokens(secrets.token_bytes(32)), clock)
     async with Client(server) as client:
         agent = await SupportAgent.connect(
             client,
@@ -60,6 +61,20 @@ async def chat() -> None:
                 break
             turn = await agent.reply(conversation_id, message)
             print(f"agent> {turn.reply}\n")
+            await customer_channel(bank)
+
+
+async def customer_channel(bank: Bank) -> None:
+    """The Customer's app: the only place a Pending Action can be confirmed (ADR-0004)."""
+    for action in await bank.awaiting_confirmation(ANA.id):
+        print(f"[Kestrel Bank app] {action.summary}")
+        answer = await asyncio.to_thread(input, "[Kestrel Bank app] Confirm? [y/N] ")
+        if answer.strip().lower() == "y":
+            await bank.confirm(ANA.id, action.id)
+            print("[Kestrel Bank app] Confirmed.\n")
+        else:
+            await bank.reject(ANA.id, action.id)
+            print("[Kestrel Bank app] Rejected.\n")
 
 
 def main() -> None:

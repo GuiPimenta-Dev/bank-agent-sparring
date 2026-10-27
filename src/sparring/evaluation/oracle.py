@@ -2,6 +2,7 @@ import copy
 from dataclasses import dataclass
 
 from sparring.bank.domain.card import FreezeSource
+from sparring.bank.domain.lost_or_stolen_report import execute_lost_or_stolen_report
 from sparring.bank.domain.refusals import HardRuleRefusal
 from sparring.evaluation.scenario import BankSnapshot, Scenario
 
@@ -15,8 +16,8 @@ class Verdict:
 class Oracle:
     """The deterministic Policy: the only authority on what correct means (ADR-0001).
 
-    Hard Rules are reused from the bank's domain (ADR-0003); a refused operation
-    means the correct outcome leaves the bank unchanged.
+    Hard Rules and the mechanics of each operation are reused from the bank's domain
+    (ADR-0003); a refused operation means the correct outcome leaves the bank unchanged.
     """
 
     def expected_outcome(self, scenario: Scenario) -> BankSnapshot:
@@ -29,6 +30,12 @@ class Oracle:
                     card.freeze(FreezeSource.CUSTOMER)
                 case "unfreeze_card":
                     card.unfreeze(FreezeSource.CUSTOMER)
+                case "report_lost_or_stolen":
+                    assert intent.reason is not None, "validated when the Scenario is loaded"
+                    customer = expected.customer(card.customer_id)
+                    replacement, fee = execute_lost_or_stolen_report(card, customer, intent.reason)
+                    expected.cards.append(replacement)
+                    expected.fees.extend([fee] if fee else [])
         except HardRuleRefusal:
             return copy.deepcopy(scenario.bank)
         return expected

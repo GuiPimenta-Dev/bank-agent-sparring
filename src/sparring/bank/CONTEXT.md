@@ -28,6 +28,10 @@ _Avoid_: block, cancellation, card blocking
 A new card with a new number, issued after a Lost or Stolen Report.
 _Avoid_: reissue, new card
 
+**Fee**:
+A charge the bank applies to a Customer, such as for a Replacement Card.
+_Avoid_: charge, cost, price
+
 **Dispute**:
 A Customer's claim that a settled transaction is wrong or was not authorized by them.
 _Avoid_: chargeback, contestation, claim

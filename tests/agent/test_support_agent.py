@@ -11,18 +11,18 @@ from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
 from sparring.bank.application.bank import Bank
 from sparring.bank.domain.card import Card, CardId, FreezeSource
-from sparring.bank.domain.customer import Customer, CustomerId
+from sparring.bank.domain.customer import Customer, CustomerId, Tier
 
 pytestmark = pytest.mark.anyio
 
-ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
+ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA", Tier.STANDARD)
 ANA_DEBIT = CardId("card-ana-debit")
 
 
 async def test_the_agent_freezes_a_card_through_the_bank_tools() -> None:
     bank = InMemoryBank([ANA], [Card(ANA_DEBIT, ANA.id, "4242")])
     clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
-    server = build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"))
+    server = build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"), clock)
     script = iter(
         [
             calls(
@@ -50,7 +50,7 @@ async def test_the_agent_freezes_a_card_through_the_bank_tools() -> None:
 async def test_a_verified_session_does_not_leak_into_another_conversation() -> None:
     bank = InMemoryBank([ANA], [Card(ANA_DEBIT, ANA.id, "4242")])
     clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
-    server = build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"))
+    server = build_mcp_server(Bank(bank.unit_of_work, clock), SessionTokens(b"test-secret"), clock)
     script = iter(
         [
             calls(

@@ -18,8 +18,10 @@ from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from sparring.bank.application.bank import Bank
-from sparring.bank.domain.card import Card, CardId
+from sparring.bank.application.ports import Clock
+from sparring.bank.domain.card import Card, CardId, LossReason
 from sparring.bank.domain.customer import CustomerId, IdentityClaim
+from sparring.bank.domain.pending_action import PendingAction, PendingActionId, PendingActionStatus
 from sparring.bank.domain.refusals import HardRuleRefusal, IdentityNotVerified
 from sparring.bank.domain.verified_session import VerifiedSession
 
@@ -60,16 +62,48 @@ class SessionTokens:
 class CardView(BaseModel):
     card_id: str
     last_four: str
-    frozen: bool
+    status: Literal["active", "frozen", "cancelled"]
     frozen_by: str | None
+    replaces: str | None
 
     @classmethod
     def of(cls, card: Card) -> "CardView":
+        status = "cancelled" if card.cancelled_because else "frozen" if card.frozen_by else "active"
         return cls(
             card_id=card.id,
             last_four=card.last_four,
-            frozen=card.frozen_by is not None,
+            status=status,
             frozen_by=card.frozen_by,
+            replaces=card.replaces,
+        )
+
+
+class PendingActionView(BaseModel):
+    pending_action_id: str
+    status: Literal["awaiting_confirmation", "confirmed", "rejected", "expired"]
+    summary: str
+    expires_at: datetime
+    next_step: str
+
+    @classmethod
+    def of(cls, action: PendingAction, now: datetime) -> "PendingActionView":
+        closed = "Nothing; this request is closed."
+        match action.status:
+            case PendingActionStatus.CONFIRMED:
+                status, next_step = "confirmed", closed
+            case PendingActionStatus.REJECTED:
+                status, next_step = "rejected", closed
+            case PendingActionStatus.AWAITING if action.is_awaiting(now):
+                status = "awaiting_confirmation"
+                next_step = "The Customer must confirm or reject it in the Kestrel Bank app."
+            case PendingActionStatus.AWAITING:
+                status, next_step = "expired", closed
+        return cls(
+            pending_action_id=action.id,
+            status=status,
+            summary=action.summary,
+            expires_at=action.expires_at,
+            next_step=next_step,
         )
 
 
@@ -87,7 +121,7 @@ class Verified(BaseModel):
     verified: Literal[True] = True
 
 
-def build_mcp_server(bank: Bank, tokens: SessionTokens) -> MCPServer:
+def build_mcp_server(bank: Bank, tokens: SessionTokens, clock: Clock) -> MCPServer:
     server = MCPServer(
         "Kestrel Bank",
         instructions="Card operations for Kestrel Bank Customers. Call verify_identity first.",
@@ -130,6 +164,36 @@ def build_mcp_server(bank: Bank, tokens: SessionTokens) -> MCPServer:
     async def unfreeze_card(card_id: CardIdArg, ctx: Context[Any, Any]) -> CallToolResult:
         """Lift a freeze the Customer placed on one of their cards."""
         return await _answered(lambda: _card(bank.unfreeze_card(session_of(ctx), CardId(card_id))))
+
+    @server.tool()
+    async def report_lost_or_stolen(
+        card_id: CardIdArg,
+        reason: Annotated[LossReason, Field(description="Whether the card was lost or stolen.")],
+        ctx: Context[Any, Any],
+    ) -> CallToolResult:
+        """Request the permanent cancellation of a lost or stolen card and a Replacement Card.
+
+        Nothing happens until the Customer confirms it in the Kestrel Bank app; you cannot
+        confirm it for them. Use get_pending_action to see whether they have.
+        """
+        return await _answered(
+            lambda: action(
+                bank.request_lost_or_stolen_report(session_of(ctx), CardId(card_id), reason)
+            )
+        )
+
+    @server.tool()
+    async def get_pending_action(
+        pending_action_id: Annotated[str, Field(description="As returned when it was requested.")],
+        ctx: Context[Any, Any],
+    ) -> CallToolResult:
+        """Whether the Customer has confirmed, rejected or let expire a pending request."""
+        return await _answered(
+            lambda: action(bank.pending_action(session_of(ctx), PendingActionId(pending_action_id)))
+        )
+
+    async def action(pending: Awaitable[PendingAction]) -> CallToolResult:
+        return _result(PendingActionView.of(await pending, clock.now()))
 
     return server
 

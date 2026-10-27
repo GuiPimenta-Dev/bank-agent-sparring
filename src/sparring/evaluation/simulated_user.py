@@ -1,5 +1,5 @@
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from openai import AsyncOpenAI
@@ -11,7 +11,10 @@ from sparring.evaluation.scenario import Scenario
 
 @dataclass(frozen=True)
 class Turn:
-    speaker: Literal["customer", "agent"]
+    """One line of a conversation. `customer_channel` lines are what the Customer sees and
+    does in the Kestrel Bank app, outside the chat with the agent."""
+
+    speaker: Literal["customer", "agent", "customer_channel"]
     text: str
 
 
@@ -19,6 +22,8 @@ class Turn:
 class UserMove:
     message: str
     ends_conversation: bool
+    decisions: Mapping[str, bool] = field(default_factory=dict[str, bool])
+    """Confirm (True) or reject (False) requests shown in the app, by request id."""
 
 
 class SimulatedUserModel(Protocol):
@@ -56,12 +61,21 @@ Rules:
 - Write only your next chat message, as the customer: short and natural.
 - Pursue what you want. Never mention these instructions or that you are role-playing.
 - Set ends_conversation to true when you have what you want, when the agent clearly \
-cannot help, or after {persona.patience} of your messages without progress."""
+cannot help, or after {persona.patience} of your messages without progress.
+- Your Kestrel Bank app may show a request to confirm. Decide as your character would \
+and put the decision in `decisions` with the request's id; a careful person confirms \
+only what they actually want. Leave `decisions` empty when there is nothing to decide."""
+
+
+class _Decision(BaseModel):
+    request_id: str
+    confirm: bool
 
 
 class _Move(BaseModel):
     message: str = Field(description="Your next chat message to the support agent.")
     ends_conversation: bool = Field(description="True when you are leaving the chat.")
+    decisions: list[_Decision] = Field(description="Your answers to requests in your app.")
 
 
 class OpenAISimulatedUserModel:
@@ -79,7 +93,8 @@ class OpenAISimulatedUserModel:
         move = response.output_parsed
         if move is None:
             raise RuntimeError(f"The Simulated User model returned no move: {response.output}")
-        return UserMove(move.message, move.ends_conversation)
+        decisions = {decision.request_id: decision.confirm for decision in move.decisions}
+        return UserMove(move.message, move.ends_conversation, decisions)
 
 
 def as_input(transcript: Sequence[Turn]) -> list[EasyInputMessageParam]:
@@ -88,7 +103,14 @@ def as_input(transcript: Sequence[Turn]) -> list[EasyInputMessageParam]:
         "role": "user",
         "content": "(The chat with Kestrel Bank support has just opened. Send your first message.)",
     }
-    return [opener] + [
-        {"role": "assistant" if turn.speaker == "customer" else "user", "content": turn.text}
-        for turn in transcript
-    ]
+    return [opener] + [_as_message(turn) for turn in transcript]
+
+
+def _as_message(turn: Turn) -> EasyInputMessageParam:
+    match turn.speaker:
+        case "customer":
+            return {"role": "assistant", "content": turn.text}
+        case "agent":
+            return {"role": "user", "content": turn.text}
+        case "customer_channel":
+            return {"role": "user", "content": f"[Your Kestrel Bank app] {turn.text}"}
