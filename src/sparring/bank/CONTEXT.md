@@ -32,9 +32,17 @@ _Avoid_: reissue, new card
 A charge the bank applies to a Customer, such as for a Replacement Card.
 _Avoid_: charge, cost, price
 
+**Transaction**:
+A movement of money made with one of the Customer's cards; it is pending until it settles, and only then final.
+_Avoid_: payment, purchase, charge
+
 **Dispute**:
 A Customer's claim that a settled transaction is wrong or was not authorized by them.
 _Avoid_: chargeback, contestation, claim
+
+**Dispute Window**:
+The period after a transaction settles during which the Customer can still dispute it.
+_Avoid_: deadline, dispute period
 
 **Provisional Credit**:
 Money temporarily credited to the Customer while a Dispute is investigated.

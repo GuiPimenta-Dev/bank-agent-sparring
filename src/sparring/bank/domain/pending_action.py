@@ -6,6 +6,7 @@ from typing import NewType
 from sparring.bank.domain.card import CardId, LossReason
 from sparring.bank.domain.customer import CustomerId
 from sparring.bank.domain.refusals import PendingActionAlreadyAnswered, PendingActionExpired
+from sparring.bank.domain.transaction import TransactionId
 
 PendingActionId = NewType("PendingActionId", str)
 
@@ -16,14 +17,24 @@ class PendingActionStatus(StrEnum):
     REJECTED = "rejected"
 
 
+@dataclass(frozen=True)
+class ReportLostOrStolen:
+    card_id: CardId
+    because: LossReason
+
+
+@dataclass(frozen=True)
+class DisputeTransaction:
+    transaction_id: TransactionId
+
+
 @dataclass
 class PendingAction:
-    """A Lost or Stolen Report the bank holds until the Customer gives a Confirmation."""
+    """An irreversible operation the bank holds until the Customer gives a Confirmation."""
 
     id: PendingActionId
     customer_id: CustomerId
-    card_id: CardId
-    because: LossReason
+    operation: ReportLostOrStolen | DisputeTransaction
     summary: str
     expires_at: datetime
     status: PendingActionStatus = PendingActionStatus.AWAITING

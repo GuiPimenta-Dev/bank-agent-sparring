@@ -1,5 +1,5 @@
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -9,17 +9,21 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from sparring.bank.domain.card import Card, CardId, FreezeSource, LossReason
 from sparring.bank.domain.customer import Customer, CustomerId, Tier
+from sparring.bank.domain.dispute import Dispute, DisputeId
 from sparring.bank.domain.fee import Fee, FeeId
 from sparring.bank.domain.money import Money
+from sparring.bank.domain.transaction import Transaction, TransactionId
 
-Operation = Literal["freeze_card", "unfreeze_card", "report_lost_or_stolen"]
+Operation = Literal["freeze_card", "unfreeze_card", "report_lost_or_stolen", "dispute_transaction"]
 
 
 @dataclass
 class BankSnapshot:
     customers: list[Customer]
     cards: list[Card]
-    fees: list[Fee]
+    fees: list[Fee] = field(default_factory=list[Fee])
+    transactions: list[Transaction] = field(default_factory=list[Transaction])
+    disputes: list[Dispute] = field(default_factory=list[Dispute])
 
     def card(self, card_id: CardId) -> Card:
         return next(card for card in self.cards if card.id == card_id)
@@ -27,17 +31,24 @@ class BankSnapshot:
     def customer(self, customer_id: CustomerId) -> Customer:
         return next(customer for customer in self.customers if customer.id == customer_id)
 
+    def transaction(self, transaction_id: TransactionId) -> Transaction:
+        return next(t for t in self.transactions if t.id == transaction_id)
+
     def differences(self, actual: "BankSnapshot") -> list[str]:
         """What `actual` does not share with this snapshot, one line per difference."""
         lines = _differences("card", self.cards, actual.cards)
         lines += _differences("fee", self.fees, actual.fees)
+        lines += _differences("transaction", self.transactions, actual.transactions)
+        lines += _differences("dispute", self.disputes, actual.disputes)
         if self.customers != actual.customers:
             lines.append("customers differ")
         return lines
 
 
 def _differences(
-    kind: str, expected: list[Card] | list[Fee], actual: list[Card] | list[Fee]
+    kind: str,
+    expected: Sequence[Card | Fee | Transaction | Dispute],
+    actual: Sequence[Card | Fee | Transaction | Dispute],
 ) -> list[str]:
     expected_by_id: dict[str, dict[str, Any]] = {item.id: asdict(item) for item in expected}
     actual_by_id: dict[str, dict[str, Any]] = {item.id: asdict(item) for item in actual}
@@ -66,9 +77,12 @@ class Persona:
 
 @dataclass(frozen=True)
 class Intent:
+    """The operation the Customer wants, on a card or, for a Dispute, on a transaction."""
+
     operation: Operation
-    card_id: CardId
+    card_id: CardId | None = None
     reason: LossReason | None = None
+    transaction_id: TransactionId | None = None
 
 
 @dataclass(frozen=True)
@@ -127,11 +141,33 @@ class _FeeFile(BaseModel):
     reason: str
 
 
+class _TransactionFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    customer_id: str
+    card_id: str
+    merchant: str
+    amount: Decimal = Field(gt=0)
+    currency: str = "GBP"
+    settled_on: date | None = None
+
+
+class _DisputeFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    customer_id: str
+    transaction_id: str
+    provisional_credit: Decimal | None = None
+    currency: str = "GBP"
+
+
 class _BankFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     customers: list[_CustomerFile]
     cards: list[_CardFile]
     fees: list[_FeeFile] = Field(default_factory=list[_FeeFile])
+    transactions: list[_TransactionFile] = Field(default_factory=list[_TransactionFile])
+    disputes: list[_DisputeFile] = Field(default_factory=list[_DisputeFile])
 
     def to_snapshot(self) -> BankSnapshot:
         return BankSnapshot(
@@ -154,6 +190,28 @@ class _BankFile(BaseModel):
                 Fee(FeeId(f.id), CustomerId(f.customer_id), Money(f.amount, f.currency), f.reason)
                 for f in self.fees
             ],
+            transactions=[
+                Transaction(
+                    TransactionId(t.id),
+                    CustomerId(t.customer_id),
+                    CardId(t.card_id),
+                    t.merchant,
+                    Money(t.amount, t.currency),
+                    t.settled_on,
+                )
+                for t in self.transactions
+            ],
+            disputes=[
+                Dispute(
+                    DisputeId(d.id),
+                    CustomerId(d.customer_id),
+                    TransactionId(d.transaction_id),
+                    Money(d.provisional_credit, d.currency)
+                    if d.provisional_credit is not None
+                    else None,
+                )
+                for d in self.disputes
+            ],
         )
 
 
@@ -169,8 +227,9 @@ class _PersonaFile(BaseModel):
 class _IntentFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation: Operation
-    card_id: str
+    card_id: str | None = None
     reason: LossReason | None = None
+    transaction_id: str | None = None
 
 
 class _GoalFile(BaseModel):
@@ -192,8 +251,19 @@ class _ScenarioFile(BaseModel):
     def to_scenario(self) -> Scenario:
         bank = self.bank.to_snapshot()
         intent = self.goal.intent
-        if CardId(intent.card_id) not in {card.id for card in bank.cards}:
+        disputing = intent.operation == "dispute_transaction"
+        if disputing != (intent.transaction_id is not None) or disputing == (
+            intent.card_id is not None
+        ):
+            raise ValueError(f"Scenario {self.id}: a Dispute names a transaction, others a card")
+        if intent.card_id and intent.card_id not in {card.id for card in bank.cards}:
             raise ValueError(f"Scenario {self.id}: the Goal names unknown card {intent.card_id}")
+        if intent.transaction_id and intent.transaction_id not in {
+            transaction.id for transaction in bank.transactions
+        }:
+            raise ValueError(
+                f"Scenario {self.id}: the Goal names unknown transaction {intent.transaction_id}"
+            )
         if (intent.operation == "report_lost_or_stolen") != (intent.reason is not None):
             raise ValueError(f"Scenario {self.id}: a reason goes with report_lost_or_stolen only")
         if CustomerId(self.persona.customer_id) not in {c.id for c in bank.customers}:
@@ -210,7 +280,12 @@ class _ScenarioFile(BaseModel):
                 facts=self.persona.facts,
             ),
             goal=Goal(
-                Intent(intent.operation, CardId(intent.card_id), intent.reason),
+                Intent(
+                    intent.operation,
+                    CardId(intent.card_id) if intent.card_id else None,
+                    intent.reason,
+                    TransactionId(intent.transaction_id) if intent.transaction_id else None,
+                ),
                 self.goal.narrative,
             ),
             dimensions=self.dimensions,

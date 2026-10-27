@@ -37,3 +37,13 @@ def test_the_simulated_user_reads_the_agent_as_the_other_party() -> None:
     transcript = [Turn("customer", "Hi"), Turn("agent", "Hello")]
     roles = [message["role"] for message in as_input(transcript)]
     assert roles == ["user", "assistant", "user"]
+
+
+def test_a_dispute_goal_names_a_known_transaction_and_no_card(tmp_path: Path) -> None:
+    unknown = {"intent": {"operation": "dispute_transaction", "transaction_id": "tx-x"}}
+    with pytest.raises(ValueError, match="unknown transaction tx-x"):
+        load_scenario(write(tmp_path, {"goal": {**unknown, "narrative": "x"}}))
+
+    with_a_card = {"operation": "dispute_transaction", "card_id": "card-ana-debit"}
+    with pytest.raises(ValueError, match="a Dispute names a transaction"):
+        load_scenario(write(tmp_path, {"goal": {"intent": with_a_card, "narrative": "x"}}))

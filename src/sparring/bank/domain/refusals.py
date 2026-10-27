@@ -52,6 +52,31 @@ class CardCancelled(HardRuleRefusal):
         super().__init__(f"Card {card_id} has been cancelled and can no longer be used.")
 
 
+class TransactionNotFound(HardRuleRefusal):
+    def __init__(self, transaction_id: str) -> None:
+        super().__init__(f"There is no transaction {transaction_id} on this Customer's account.")
+
+
+class TransactionPending(HardRuleRefusal):
+    def __init__(self, transaction_id: str) -> None:
+        super().__init__(
+            f"Transaction {transaction_id} is still pending; it can be disputed once it settles."
+        )
+
+
+class DisputeWindowExpired(HardRuleRefusal):
+    def __init__(self, transaction_id: str, window_days: int) -> None:
+        super().__init__(
+            f"Transaction {transaction_id} settled more than {window_days} days ago "
+            "and can no longer be disputed."
+        )
+
+
+class DisputeAlreadyOpen(HardRuleRefusal):
+    def __init__(self, transaction_id: str) -> None:
+        super().__init__(f"Transaction {transaction_id} already has an open Dispute.")
+
+
 class PendingActionNotFound(HardRuleRefusal):
     def __init__(self, pending_action_id: str) -> None:
         super().__init__(f"There is no pending action {pending_action_id} for this Customer.")

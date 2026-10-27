@@ -39,9 +39,12 @@ class KestrelUnderTest:
         self._state = state
         self._customer_id = customer_id
         self._conversation_id = conversation_id
+        self._refusals: list[str] = []
 
     async def reply(self, message: str) -> str:
-        return (await self._agent.reply(self._conversation_id, message)).reply
+        turn = await self._agent.reply(self._conversation_id, message)
+        self._refusals += turn.hard_rule_refusals
+        return turn.reply
 
     async def confirmation_requests(self) -> list[ConfirmationRequest]:
         actions = await self._bank.awaiting_confirmation(self._customer_id)
@@ -54,8 +57,15 @@ class KestrelUnderTest:
     def bank_snapshot(self) -> BankSnapshot:
         state = copy.deepcopy(self._state.state)
         return BankSnapshot(
-            list(state.customers.values()), list(state.cards.values()), list(state.fees.values())
+            list(state.customers.values()),
+            list(state.cards.values()),
+            list(state.fees.values()),
+            list(state.transactions.values()),
+            list(state.disputes.values()),
         )
+
+    def hard_rule_refusals(self) -> list[str]:
+        return list(self._refusals)
 
 
 def kestrel(connect_agent: AgentFactory) -> SystemFactory:
@@ -64,7 +74,13 @@ def kestrel(connect_agent: AgentFactory) -> SystemFactory:
         scenario: Scenario, conversation_id: str
     ) -> AsyncGenerator[SystemUnderTest]:
         snapshot = copy.deepcopy(scenario.bank)
-        state = InMemoryBank(snapshot.customers, snapshot.cards, snapshot.fees)
+        state = InMemoryBank(
+            snapshot.customers,
+            snapshot.cards,
+            snapshot.fees,
+            snapshot.transactions,
+            snapshot.disputes,
+        )
         clock = FixedClock(scenario.now)
         bank = Bank(state.unit_of_work, clock)
         server = build_mcp_server(bank, SessionTokens(secrets.token_bytes(32)), clock)

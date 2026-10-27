@@ -1,0 +1,106 @@
+{
+  "id": "dispute-above-standard-limit-opens-without-credit",
+  "now": "2026-10-26T12:00:00+00:00",
+  "bank": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ana-currys",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "Currys",
+        "amount": "500.01",
+        "currency": "GBP",
+        "settled_on": "2026-10-14"
+      }
+    ],
+    "disputes": []
+  },
+  "persona": {
+    "name": "Ana Souza",
+    "customer_id": "C-1001",
+    "temperament": "calm and careful: you read what the app asks before confirming",
+    "patience": 6,
+    "facts": {
+      "customer number": "C-1001",
+      "date of birth": "1990-05-17",
+      "postcode": "SW1A 1AA",
+      "debit card": "ends in 4242",
+      "the wrong payment": "£500.01 to Currys, 14 October"
+    }
+  },
+  "goal": {
+    "intent": {
+      "operation": "dispute_transaction",
+      "transaction_id": "tx-ana-currys"
+    },
+    "narrative": "Currys charged your debit card £500.01 on 14 October for a laptop they never delivered and will not refund. You want that payment disputed, even if no money comes back while it is investigated. You still have your card and it is safe. Confirm the request in your app if it matches."
+  },
+  "dimensions": {
+    "operation": "dispute_transaction",
+    "tier": "standard",
+    "transaction_state": "settled",
+    "transaction_age_days": "12",
+    "amount_band": "above_limit",
+    "policy_rule": "DS-5"
+  },
+  "expected_outcome": {
+    "customers": [
+      {
+        "id": "C-1001",
+        "full_name": "Ana Souza",
+        "date_of_birth": "1990-05-17",
+        "postcode": "SW1A 1AA",
+        "tier": "standard"
+      }
+    ],
+    "cards": [
+      {
+        "id": "card-ana-debit",
+        "customer_id": "C-1001",
+        "last_four": "4242",
+        "frozen_by": null,
+        "cancelled_because": null,
+        "replaces": null
+      }
+    ],
+    "transactions": [
+      {
+        "id": "tx-ana-currys",
+        "customer_id": "C-1001",
+        "card_id": "card-ana-debit",
+        "merchant": "Currys",
+        "amount": "500.01",
+        "currency": "GBP",
+        "settled_on": "2026-10-14"
+      }
+    ],
+    "disputes": [
+      {
+        "id": "dispute-tx-ana-currys",
+        "customer_id": "C-1001",
+        "transaction_id": "tx-ana-currys",
+        "provisional_credit": null,
+        "currency": "GBP"
+      }
+    ]
+  }
+}
