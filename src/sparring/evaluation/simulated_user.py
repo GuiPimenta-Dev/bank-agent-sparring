@@ -4,9 +4,10 @@ from typing import Any, Literal, Protocol
 
 import openai
 from openai import AsyncOpenAI
-from openai.types.responses import EasyInputMessageParam
+from openai.types.responses import EasyInputMessageParam, Response
 from pydantic import BaseModel, Field
 
+from sparring.evaluation.cost import Usage
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.scenario import Scenario
 
@@ -28,6 +29,8 @@ class Turn:
     speaker: Literal["customer", "agent", "customer_channel"]
     text: str
     tool_calls: tuple[ToolCall, ...] = ()
+    usage: Usage | None = None
+    """What the model behind the speaker consumed to produce this turn."""
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class UserMove:
     ends_conversation: bool
     decisions: Mapping[str, bool] = field(default_factory=dict[str, bool])
     """Confirm (True) or reject (False) requests shown in the app, by request id."""
+    usage: Usage | None = None
 
 
 class SimulatedUserModel(Protocol):
@@ -108,17 +112,33 @@ class OpenAISimulatedUserModel:
                 text_format=_Move,
             )
         except openai.APIError as error:
-            if _retries_ran_out(error):
+            if retries_ran_out(error):
                 raise InfrastructureFailure(str(error)) from error
             raise
         move = response.output_parsed
         if move is None:
             raise RuntimeError(f"The Simulated User model returned no move: {response.output}")
         decisions = {decision.request_id: decision.confirm for decision in move.decisions}
-        return UserMove(move.message, move.ends_conversation, decisions)
+        return UserMove(
+            move.message, move.ends_conversation, decisions, usage_of(response, self._model)
+        )
 
 
-def _retries_ran_out(error: openai.APIError) -> bool:
+def usage_of(response: Response, model: str) -> Usage | None:
+    """Priced as the model that was asked for, since the response may name a dated snapshot.
+    OpenAI counts cached input inside `input_tokens`; it is taken out again here."""
+    if response.usage is None:
+        return None
+    cached = response.usage.input_tokens_details.cached_tokens
+    return Usage(
+        model,
+        input_tokens=response.usage.input_tokens - cached,
+        output_tokens=response.usage.output_tokens,
+        cache_read_tokens=cached,
+    )
+
+
+def retries_ran_out(error: openai.APIError) -> bool:
     """Whether the error is one the SDK retries, so it was raised only once retries ran out."""
     if isinstance(error, openai.APIStatusError):
         return error.status_code in (408, 409, 429) or error.status_code >= 500

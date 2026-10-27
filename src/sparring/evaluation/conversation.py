@@ -4,6 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from sparring.evaluation.cost import Usage
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.invariants import InvariantViolation, invariant_violations
 from sparring.evaluation.oracle import Oracle
@@ -52,6 +53,11 @@ class Conversation:
     reached_turn_limit: bool
     interrupted_by: str | None = None
     """The infrastructure failure that cut the conversation short, if one did."""
+
+    @property
+    def usage(self) -> list[Usage]:
+        """What the agent and the Simulated User consumed, turn by turn."""
+        return [turn.usage for turn in self.transcript if turn.usage is not None]
 
     @property
     def hard_rule_refusals(self) -> list[str]:
@@ -162,7 +168,7 @@ class ScenarioRunner:
                     await system.answer(request_id, confirm)
                     verb = "confirmed" if confirm else "rejected"
                     transcript.append(Turn("customer_channel", f"You {verb} request {request_id}."))
-            transcript.append(Turn("customer", move.message))
+            transcript.append(Turn("customer", move.message, usage=move.usage))
             if move.ends_conversation:
                 return False
             transcript.append(await system.reply(move.message))

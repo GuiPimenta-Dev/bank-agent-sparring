@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 sparring-chat = "sparring.chat:main"
 sparring-run-scenario = "sparring.run_scenario:main"
+sparring-explore = "sparring.explore:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -75,12 +76,12 @@ forbidden_modules = ["sparring.bank"]
 name = "The bank knows nothing of the agent"
 type = "forbidden"
 source_modules = ["sparring.bank"]
-forbidden_modules = ["sparring.agent", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.system_under_test", "sparring.tracing"]
+forbidden_modules = ["sparring.agent", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.system_under_test", "sparring.tracing"]
 
 [[tool.importlinter.contracts]]
 name = "LangGraph and LangChain stay inside the agent"
 type = "forbidden"
-source_modules = ["sparring.bank", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.system_under_test", "sparring.tracing"]
+source_modules = ["sparring.bank", "sparring.evaluation", "sparring.chat", "sparring.run_scenario", "sparring.explore", "sparring.system_under_test", "sparring.tracing"]
 forbidden_modules = ["langgraph", "langchain", "langchain_core", "langchain_anthropic"]
 allow_indirect_imports = true
 

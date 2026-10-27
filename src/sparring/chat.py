@@ -23,7 +23,7 @@ from sparring.bank.domain.card import Card, CardId, FreezeSource
 from sparring.bank.domain.customer import Customer, CustomerId, Tier
 from sparring.bank.domain.money import Money
 from sparring.bank.domain.transaction import Transaction, TransactionId
-from sparring.tracing import langfuse_client
+from sparring.tracing import langfuse_client, tracing_enabled
 
 ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA", Tier.STANDARD)
 ANA_DEBIT = CardId("card-ana-debit")
@@ -63,7 +63,7 @@ Requests the agent makes on your behalf appear below as your Kestrel Bank app.
 
 
 async def chat() -> None:
-    tracing = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
+    tracing = tracing_enabled()
     if tracing:
         langfuse_client()
     clock = SystemClock()
