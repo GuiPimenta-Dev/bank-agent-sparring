@@ -20,6 +20,7 @@ from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
 from sparring.bank.application.bank import Bank
 from sparring.bank.domain.card import Card, CardId, FreezeSource
 from sparring.bank.domain.customer import Customer, CustomerId
+from sparring.tracing import langfuse_client
 
 ANA = Customer(CustomerId("C-1001"), "Ana Souza", date(1990, 5, 17), "SW1A 1AA")
 ANA_CARDS = [
@@ -34,6 +35,9 @@ postcode {ANA.postcode}. Your credit card was frozen by the fraud team.
 
 
 async def chat() -> None:
+    tracing = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
+    if tracing:
+        langfuse_client()
     bank = InMemoryBank([ANA], ANA_CARDS)
     server = build_mcp_server(
         Bank(bank.unit_of_work, SystemClock()), SessionTokens(secrets.token_bytes(32))
@@ -43,7 +47,7 @@ async def chat() -> None:
             client,
             model=os.environ.get("SPARRING_AGENT_MODEL", "claude-haiku-5-5"),
             effort=os.environ.get("SPARRING_AGENT_EFFORT"),
-            tracing=bool(os.environ.get("LANGFUSE_PUBLIC_KEY")),
+            tracing=tracing,
         )
         conversation_id = uuid.uuid4().hex
         print(BANNER)

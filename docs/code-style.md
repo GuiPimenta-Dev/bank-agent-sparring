@@ -10,8 +10,8 @@ How code in `sparring` is written. Each rule points to the ADR that explains why
 
 ## Vocabulary
 
-- Names of modules, classes, functions and variables use the terms in `CONTEXT.md`. A word listed under _Avoid_ there is avoided in code too: `Scenario`, never `TestCase`; `promotion.py`, never `golden_ingest.py`.
-- A concept that needs a name and has none in `CONTEXT.md` gets one there first.
+- Names of modules, classes, functions and variables use the terms in the context glossaries listed in `CONTEXT-MAP.md`. A word listed under _Avoid_ there is avoided in code too: `Scenario`, never `TestCase`; `promotion.py`, never `golden_ingest.py`.
+- A concept that needs a name and has none in its context's `CONTEXT.md` gets one there first.
 
 ## Module boundaries
 
@@ -34,14 +34,16 @@ src/sparring/
     domain/        aggregates, value objects, domain services, HardRuleRefusal
     application/   async use cases and ports (Protocols)
     adapters/      in_memory.py, postgres/, mcp_server.py, customer_channel.py
-    main.py        composition root
   agent/
     policy.md      the Policy text, used as the system prompt
     support_agent.py
     bank_tools.py  the bank's MCP tools as LangChain tools
-  chat.py          composition root of the terminal chat
   evaluation/
-    one flat file per glossary concept: scenario.py, sampling.py, oracle.py, promotion.py, ...
+    one flat file per glossary concept: scenario.py, oracle.py, simulated_user.py, conversation.py, ...
+  chat.py          composition root of the terminal chat
+  run_scenario.py  composition root that runs one Scenario
+  system_under_test.py  a fresh bank and agent per Scenario, shared by composition roots
+  tracing.py       Langfuse set-up shared by composition roots
 ```
 
 - Layers exist only in `bank`, because two entrypoints (MCP and the Customer Channel) share its use cases.
