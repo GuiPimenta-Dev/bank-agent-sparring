@@ -17,6 +17,18 @@ uv run pyright
 uv run lint-imports
 ```
 
+Local Langfuse (first time: `cp infra/langfuse/.env.example infra/langfuse/.env`), UI at http://localhost:3000:
+
+```bash
+(cd infra/langfuse && docker compose up -d --wait)
+```
+
+Talk to the agent as the demo Customer (first time: `cp .env.example .env` and set `ANTHROPIC_API_KEY`). It calls a paid API, so only the user runs it:
+
+```bash
+uv run --env-file .env sparring-chat
+```
+
 ## Delivering a slice
 
 Each GitHub issue is a vertical slice. A slice is delivered when all of this has happened, in order — it is the end of the work, not an optional step, and needs no separate approval:
