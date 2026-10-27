@@ -15,7 +15,7 @@ How code in `sparring` is written. Each rule points to the ADR that explains why
 
 ## Module boundaries
 
-Enforced by `import-linter` ([ADR-0007](adr/0007-three-modules-enforced-boundaries.md), [ADR-0008](adr/0008-langgraph-contained-in-agent.md), [ADR-0014](adr/0014-stdlib-domain-pydantic-at-edges.md)):
+Enforced by `import-linter`, except the standard-library-only rule for `bank.domain`, which import-linter cannot express and a test checks instead ([ADR-0007](adr/0007-three-modules-enforced-boundaries.md), [ADR-0008](adr/0008-langgraph-contained-in-agent.md), [ADR-0014](adr/0014-stdlib-domain-pydantic-at-edges.md)):
 
 | Module | May import | Must never import |
 |---|---|---|
@@ -59,7 +59,7 @@ From [ADR-0016](adr/0016-protocol-ports-no-inheritance.md):
 ## Domain modelling
 
 - `bank.domain` uses only the standard library ([ADR-0014](adr/0014-stdlib-domain-pydantic-at-edges.md)).
-- Value objects are `@dataclass(frozen=True)`. Aggregates are plain classes whose methods protect their own Hard Rules.
+- Ids are `NewType`s over `str`. Value objects are `@dataclass(frozen=True)`. Aggregates are plain classes whose methods protect their own Hard Rules.
 - Aggregates are small and reference each other by id. A rule spanning several aggregates lives in a domain service, such as `DisputeEligibility`.
 - Money is `Money` (a `Decimal` plus a currency), never `float`.
 - Never call `datetime.now()` in `domain` or `application`. Time comes from the injected `Clock`.
@@ -113,4 +113,5 @@ From [ADR-0009](adr/0009-in-memory-and-postgres-repositories.md) and [ADR-0015](
 
 - Comments explain why, not what. Code that needs a "what" comment needs better names.
 - Docstrings go on ports, use cases and the public interface of `agent`, and nowhere by default.
-- A deliberate simplification with a known limit carries a comment naming the limit and the upgrade path.
+- A deliberate simplification's known limit and upgrade path go in the PR's delivery report, not in a code comment.
+- No `ponytail` comments, ever (checked in CI).
