@@ -45,6 +45,7 @@ src/sparring/
   explore.py       composition root of Exploration
   failures.py      composition root of the Failure Signature report
   check_regressions.py  composition root of the Regression Check
+  sweep.py         composition root of the model sweep
   system_under_test.py  a fresh bank and agent per Scenario, shared by composition roots
   tracing.py       Langfuse set-up shared by composition roots
 ```

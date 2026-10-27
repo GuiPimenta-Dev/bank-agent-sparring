@@ -53,6 +53,12 @@ Regression Check: the Golden Set against this commit's agent, compared with main
 uv run --env-file .env sparring-regression-check --max-cost 2.00
 ```
 
+Model sweep: the Golden Set over agent models × effort levels, as Langfuse experiment runs, reporting resolved rate and cost per resolved conversation per cell. The larger models are expensive, so it is a paid run only with the user's approval of its cap:
+
+```bash
+uv run --env-file .env sparring-sweep --max-cost 3.00 --models claude-sonnet-5-5,claude-haiku-5-5
+```
+
 ## Delivering a slice
 
 Each GitHub issue is a vertical slice. A slice is delivered when all of this has happened, in order — it is the end of the work, not an optional step, and needs no separate approval:
