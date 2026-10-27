@@ -16,12 +16,13 @@ class BankState:
 
 
 class InMemoryBank:
-    """Bank state held in memory; each simulated conversation gets its own (ADR-0009)."""
+    """Bank state held in memory; each simulated conversation gets its own (ADR-0009).
+
+    Serving a single conversation, one lock serializing every Unit of Work is enough.
+    """
 
     def __init__(self, customers: Iterable[Customer] = (), cards: Iterable[Card] = ()) -> None:
         self.state = BankState({c.id: c for c in customers}, {c.id: c for c in cards})
-        # ponytail: one lock serializes every Unit of Work on this bank; fine for one
-        # conversation per bank, per-aggregate locking if a bank ever serves many.
         self.lock = asyncio.Lock()
 
     def unit_of_work(self) -> "InMemoryUnitOfWork":

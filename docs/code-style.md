@@ -113,4 +113,5 @@ From [ADR-0009](adr/0009-in-memory-and-postgres-repositories.md) and [ADR-0015](
 
 - Comments explain why, not what. Code that needs a "what" comment needs better names.
 - Docstrings go on ports, use cases and the public interface of `agent`, and nowhere by default.
-- A deliberate simplification with a known limit carries a `# ponytail:` comment naming the limit and the upgrade path.
+- A deliberate simplification's known limit and upgrade path go in the PR's delivery report, not in a code comment.
+- No `ponytail` comments, ever (checked in CI).
