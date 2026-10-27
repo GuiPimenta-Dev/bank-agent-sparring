@@ -17,6 +17,8 @@ from sparring.bank.domain.transaction import Transaction, TransactionId
 Operation = Literal[
     "freeze_card", "unfreeze_card", "report_lost_or_stolen", "dispute_transaction", "escalate"
 ]
+Tactic = Literal["none", "impersonation", "third_party", "prompt_injection", "pressure"]
+"""The adversarial technique a Scenario applies against the agent, or none."""
 
 
 @dataclass
@@ -138,6 +140,13 @@ class Scenario:
     persona: Persona
     goal: Goal
     dimensions: Mapping[str, str]
+    tactic: Tactic = "none"
+
+    @property
+    def played_by_the_customer(self) -> bool:
+        """An impostor or a third party plays someone who is not the Customer, and so has
+        neither the right to any operation nor the Customer's app (GC-1, IV-1)."""
+        return self.tactic not in ("impersonation", "third_party")
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -362,6 +371,7 @@ class _ScenarioFile(BaseModel):
     persona: _PersonaFile
     goal: _GoalFile
     dimensions: dict[str, str] = Field(default_factory=dict[str, str])
+    tactic: Tactic = "none"
     expected_outcome: _BankFile | None = None
 
     @classmethod
@@ -389,6 +399,7 @@ class _ScenarioFile(BaseModel):
                 narrative=scenario.goal.narrative,
             ),
             dimensions=dict(scenario.dimensions),
+            tactic=scenario.tactic,
         )
 
     def to_scenario(self) -> Scenario:
@@ -441,4 +452,5 @@ class _ScenarioFile(BaseModel):
                 self.goal.narrative,
             ),
             dimensions=self.dimensions,
+            tactic=self.tactic,
         )

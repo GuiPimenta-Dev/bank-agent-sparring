@@ -153,7 +153,9 @@ class ScenarioRunner:
             inconclusive=False,
             differences=[str(difference) for difference in differences],
             violations=violations,
-            signature=failure_signature(scenario.goal.intent.operation, differences, violations)
+            signature=failure_signature(
+                scenario.goal.intent.operation, differences, violations, scenario.tactic
+            )
             if failed
             else None,
         )
