@@ -42,6 +42,7 @@ src/sparring/
     one flat file per glossary concept: scenario.py, oracle.py, simulated_user.py, conversation.py, ...
   chat.py          composition root of the terminal chat
   run_scenario.py  composition root that runs one Scenario
+  explore.py       composition root of Exploration
   system_under_test.py  a fresh bank and agent per Scenario, shared by composition roots
   tracing.py       Langfuse set-up shared by composition roots
 ```

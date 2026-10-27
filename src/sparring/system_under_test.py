@@ -20,6 +20,7 @@ from sparring.bank.application.bank import Bank
 from sparring.bank.domain.customer import CustomerId
 from sparring.bank.domain.pending_action import PendingActionId
 from sparring.evaluation.conversation import ConfirmationRequest, SystemFactory, SystemUnderTest
+from sparring.evaluation.cost import Usage
 from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.scenario import BankSnapshot, Scenario
 from sparring.evaluation.simulated_user import ToolCall, Turn
@@ -35,12 +36,14 @@ class KestrelUnderTest:
         state: InMemoryBank,
         customer_id: CustomerId,
         conversation_id: str,
+        agent_model: str,
     ) -> None:
         self._agent = agent
         self._bank = bank
         self._state = state
         self._customer_id = customer_id
         self._conversation_id = conversation_id
+        self._agent_model = agent_model
 
     async def reply(self, message: str) -> Turn:
         try:
@@ -48,7 +51,14 @@ class KestrelUnderTest:
         except AgentUnavailable as error:
             raise InfrastructureFailure(str(error)) from error
         calls = (ToolCall(call.name, call.arguments, call.refused_by) for call in turn.tool_calls)
-        return Turn("agent", turn.reply, tuple(calls))
+        usage = Usage(
+            self._agent_model,
+            turn.usage.input_tokens,
+            turn.usage.output_tokens,
+            turn.usage.cache_read_tokens,
+            turn.usage.cache_write_tokens,
+        )
+        return Turn("agent", turn.reply, tuple(calls), usage)
 
     async def confirmation_requests(self) -> list[ConfirmationRequest]:
         actions = await self._bank.awaiting_confirmation(self._customer_id)
@@ -70,7 +80,9 @@ class KestrelUnderTest:
         )
 
 
-def kestrel(connect_agent: AgentFactory) -> SystemFactory:
+def kestrel(connect_agent: AgentFactory, agent_model: str) -> SystemFactory:
+    """`agent_model` is the model the agent's usage is priced as."""
+
     @asynccontextmanager
     async def open_system(
         scenario: Scenario, conversation_id: str
@@ -89,7 +101,7 @@ def kestrel(connect_agent: AgentFactory) -> SystemFactory:
         async with Client(server) as client:
             agent = await connect_agent(client)
             yield KestrelUnderTest(
-                agent, bank, state, scenario.persona.customer_id, conversation_id
+                agent, bank, state, scenario.persona.customer_id, conversation_id, agent_model
             )
 
     return open_system

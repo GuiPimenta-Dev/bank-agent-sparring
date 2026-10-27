@@ -36,11 +36,24 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """What the model consumed; `input_tokens` excludes input read from or written to the
+    prompt cache."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+@dataclass(frozen=True)
 class AgentTurn:
     reply: str
     tool_calls: list[ToolCall]
     """Every tool call the agent requested in this turn, in order, including the ones the
     tool-call cap kept from running."""
+    usage: TokenUsage = TokenUsage()
+    """Every model call of the turn, added up."""
 
 
 class AgentUnavailable(Exception):
@@ -107,7 +120,7 @@ class SupportAgent:
             if isinstance(m, AIMessage)
             for call in m.tool_calls
         ]
-        return AgentTurn(turn[-1].text, tool_calls)
+        return AgentTurn(turn[-1].text, tool_calls, _usage(turn))
 
 
 @after_model(can_jump_to=["end"])
@@ -134,6 +147,25 @@ def _cap_tool_calls(state: AgentState[Any], runtime: Runtime[Any]) -> dict[str, 
 def _this_turn(messages: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
     start = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
     return messages[start:]
+
+
+def _usage(turn: Sequence[BaseMessage]) -> TokenUsage:
+    """LangChain counts cached input inside `input_tokens`; it is taken out again here."""
+    reported = [m.usage_metadata for m in turn if isinstance(m, AIMessage) and m.usage_metadata]
+    details = [usage.get("input_token_details", {}) for usage in reported]
+    cache_read = sum(d.get("cache_read") or 0 for d in details)
+    cache_write = sum(
+        (d.get("cache_creation") or 0)
+        + (d.get("ephemeral_5m_input_tokens") or 0)
+        + (d.get("ephemeral_1h_input_tokens") or 0)
+        for d in details
+    )
+    return TokenUsage(
+        input_tokens=sum(usage["input_tokens"] for usage in reported) - cache_read - cache_write,
+        output_tokens=sum(usage["output_tokens"] for usage in reported),
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+    )
 
 
 def _refusal(result: ToolMessage | None) -> str | None:

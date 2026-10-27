@@ -12,6 +12,7 @@ from sparring.agent.support_agent import (
     TOOL_CALL_CAP,
     AgentUnavailable,
     SupportAgent,
+    TokenUsage,
 )
 from sparring.bank.adapters.clock import FixedClock
 from sparring.bank.adapters.in_memory import InMemoryBank
@@ -154,6 +155,28 @@ async def test_a_turn_may_use_the_whole_tool_call_cap() -> None:
 
     assert turn.reply == "Please verify first."
     assert len(turn.tool_calls) == TOOL_CALL_CAP
+
+
+async def test_each_turn_adds_up_its_usage_with_cached_input_set_apart() -> None:
+    _, bank = kestrel_with_ana()
+    server = build_mcp_server(bank, SessionTokens(b"test-secret"), FixedClock(datetime.now(UTC)))
+    tool_round = calls("list_cards")
+    tool_round.usage_metadata = {
+        "input_tokens": 5_000,
+        "output_tokens": 40,
+        "total_tokens": 5_040,
+        "input_token_details": {"cache_read": 3_000, "cache_creation": 1_000},
+    }
+    answer = says("Please verify first.")
+    answer.usage_metadata = {"input_tokens": 600, "output_tokens": 25, "total_tokens": 625}
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(client, scripted(tool_round, answer))
+        turn = await agent.reply("conversation-1", "What cards do I have?")
+
+    assert turn.usage == TokenUsage(
+        input_tokens=1_600, output_tokens=65, cache_read_tokens=3_000, cache_write_tokens=1_000
+    )
 
 
 async def test_a_provider_that_still_fails_after_retries_makes_the_agent_unavailable() -> None:

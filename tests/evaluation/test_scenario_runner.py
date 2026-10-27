@@ -41,7 +41,11 @@ def runner(
         return await SupportAgent.with_model(client, model)
 
     return ScenarioRunner(
-        kestrel(connect_agent), user, Oracle(), recorder or InMemoryRecorder(), turn_limit=4
+        kestrel(connect_agent, "scripted"),
+        user,
+        Oracle(),
+        recorder or InMemoryRecorder(),
+        turn_limit=4,
     )
 
 

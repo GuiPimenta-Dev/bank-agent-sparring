@@ -7,7 +7,6 @@ and one Langfuse trace per conversation when Langfuse is configured.
 import argparse
 import asyncio
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -17,11 +16,10 @@ from openai import AsyncOpenAI
 from sparring.agent.support_agent import SupportAgent
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.oracle import Oracle
-from sparring.evaluation.recording import InMemoryRecorder, LangfuseRecorder, Recorder
 from sparring.evaluation.scenario import load_scenario
 from sparring.evaluation.simulated_user import OpenAISimulatedUserModel
 from sparring.system_under_test import kestrel
-from sparring.tracing import langfuse_client
+from sparring.tracing import recorder, tracing_enabled
 
 REQUIRED = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "SPARRING_SIMULATOR_MODEL")
 
@@ -31,26 +29,21 @@ async def run(path: Path) -> int:
     agent_model = os.environ.get("SPARRING_AGENT_MODEL", "claude-haiku-5-5")
     agent_effort = os.environ.get("SPARRING_AGENT_EFFORT")
     simulator_model = os.environ["SPARRING_SIMULATOR_MODEL"]
-    tracing = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
+    tracing = tracing_enabled()
 
     async def connect_agent(client: Client) -> SupportAgent:
         return await SupportAgent.connect(client, agent_model, agent_effort, tracing=tracing)
 
-    recorder: Recorder = InMemoryRecorder()
-    if tracing:
-        metadata = {
-            "agent_version": _git_sha(),
-            "agent_model": agent_model,
-            "agent_effort": agent_effort or "default",
-            "simulator_model": simulator_model,
-        }
-        recorder = LangfuseRecorder(langfuse_client(), metadata)
-
+    metadata = {
+        "agent_model": agent_model,
+        "agent_effort": agent_effort or "default",
+        "simulator_model": simulator_model,
+    }
     runner = ScenarioRunner(
-        kestrel(connect_agent),
+        kestrel(connect_agent, agent_model),
         OpenAISimulatedUserModel(AsyncOpenAI(), simulator_model),
         Oracle(),
-        recorder,
+        recorder(metadata),
     )
     conversation, verdict = await runner.run(load_scenario(path))
     for turn in conversation.transcript:
@@ -75,8 +68,3 @@ def main() -> None:
     if missing:
         sys.exit(f"Set {', '.join(missing)} (see .env.example).")
     sys.exit(asyncio.run(run(args.scenario)))
-
-
-def _git_sha() -> str:
-    result = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
-    return result.stdout.strip() or "unknown"

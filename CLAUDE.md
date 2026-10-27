@@ -35,6 +35,12 @@ Run one Scenario (or Canonical Case) end-to-end with the real agent and Simulate
 uv run --env-file .env sparring-run-scenario canonical_cases/freeze-active-debit-card.json
 ```
 
+Explore: generate Scenarios from sampled Dimensions and run them under a hard dollar cap. It shows an estimate and asks before starting. A paid run, so only with the user's approval of its cap:
+
+```bash
+uv run --env-file .env sparring-explore --scenarios 20 --max-cost 1.00
+```
+
 ## Delivering a slice
 
 Each GitHub issue is a vertical slice. A slice is delivered when all of this has happened, in order — it is the end of the work, not an optional step, and needs no separate approval:
