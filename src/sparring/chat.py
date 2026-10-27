@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from mcp import Client
 
-from sparring.agent.support_agent import SupportAgent
+from sparring.agent.support_agent import AgentUnavailable, SupportAgent
 from sparring.bank.adapters.clock import SystemClock
 from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
@@ -86,7 +86,11 @@ async def chat() -> None:
                 break
             if message.strip().lower() in {"exit", "quit"}:
                 break
-            turn = await agent.reply(conversation_id, message)
+            try:
+                turn = await agent.reply(conversation_id, message)
+            except AgentUnavailable as error:
+                print(f"[The agent is unavailable right now: {error}]")
+                break
             print(f"agent> {turn.reply}\n")
             if state.state.escalations:
                 print("[A human support agent takes over the conversation from here.]")

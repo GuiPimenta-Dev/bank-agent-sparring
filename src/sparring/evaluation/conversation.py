@@ -4,7 +4,9 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from sparring.evaluation.oracle import Oracle, Verdict
+from sparring.evaluation.inconclusive import InfrastructureFailure
+from sparring.evaluation.invariants import InvariantViolation, invariant_violations
+from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.recording import Recorder
 from sparring.evaluation.scenario import BankSnapshot, Scenario
 from sparring.evaluation.simulated_user import SimulatedUser, SimulatedUserModel, Turn
@@ -19,7 +21,12 @@ class ConfirmationRequest:
 class SystemUnderTest(Protocol):
     """The agent and the bank behind it, freshly set up for one Scenario."""
 
-    async def reply(self, message: str) -> str: ...
+    async def reply(self, message: str) -> Turn:
+        """The agent's turn: its reply and the tool calls it requested.
+
+        Raises `InfrastructureFailure` when the agent's provider still fails after retries.
+        """
+        ...
 
     async def confirmation_requests(self) -> list[ConfirmationRequest]:
         """What the Persona's Customer Channel shows right now."""
@@ -30,10 +37,6 @@ class SystemUnderTest(Protocol):
         ...
 
     def bank_snapshot(self) -> BankSnapshot: ...
-
-    def hard_rule_refusals(self) -> list[str]:
-        """The Hard Rules that refused the agent's tool calls so far, in order."""
-        ...
 
 
 SystemFactory = Callable[[Scenario, str], AbstractAsyncContextManager[SystemUnderTest]]
@@ -47,12 +50,41 @@ class Conversation:
     transcript: list[Turn]
     final: BankSnapshot
     reached_turn_limit: bool
-    hard_rule_refusals: list[str]
+    interrupted_by: str | None = None
+    """The infrastructure failure that cut the conversation short, if one did."""
+
+    @property
+    def hard_rule_refusals(self) -> list[str]:
+        """The Hard Rules that refused the agent's tool calls, in order."""
+        return [
+            call.refused_by
+            for turn in self.transcript
+            for call in turn.tool_calls
+            if call.refused_by is not None
+        ]
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Inconclusive if infrastructure cut the conversation short; otherwise a Failure if the
+    final Bank Snapshot differs from the Expected Outcome or an Invariant was violated."""
+
+    inconclusive: bool
+    differences: list[str]
+    violations: list[InvariantViolation]
+
+    @property
+    def failed(self) -> bool:
+        return not self.inconclusive and bool(self.differences or self.violations)
+
+    @property
+    def passed(self) -> bool:
+        return not self.inconclusive and not self.failed
 
 
 class ScenarioRunner:
-    """Plays a Scenario between a Simulated User and the system under test, then judges
-    the final Bank Snapshot with the Oracle and records the conversation."""
+    """Plays a Scenario between a Simulated User and the system under test, judges the
+    conversation with the Oracle and the Invariants, and records it."""
 
     def __init__(
         self,
@@ -75,17 +107,46 @@ class ScenarioRunner:
             self._open_system(scenario, conversation_id) as system,
         ):
             conversation = await self._play(conversation_id, scenario, system)
-            verdict = self._oracle.judge(scenario, conversation.final)
+            verdict = self._judge(conversation)
             self._recorder.record(conversation, verdict)
         return conversation, verdict
+
+    def _judge(self, conversation: Conversation) -> Verdict:
+        if conversation.interrupted_by is not None:
+            return Verdict(inconclusive=True, differences=[], violations=[])
+        return Verdict(
+            inconclusive=False,
+            differences=self._oracle.differences(conversation.scenario, conversation.final),
+            violations=invariant_violations(conversation.transcript),
+        )
 
     async def _play(
         self, conversation_id: str, scenario: Scenario, system: SystemUnderTest
     ) -> Conversation:
-        """The Simulated User ends the conversation, unless the agent hands it to a human
-        first (ES-1); the turn limit is only a safety stop."""
-        user = SimulatedUser(scenario, self._simulator)
         transcript: list[Turn] = []
+        try:
+            reached_turn_limit = await self._exchange(scenario, system, transcript)
+        except InfrastructureFailure as failure:
+            return Conversation(
+                conversation_id,
+                scenario,
+                transcript,
+                system.bank_snapshot(),
+                reached_turn_limit=False,
+                interrupted_by=str(failure),
+            )
+        return Conversation(
+            conversation_id, scenario, transcript, system.bank_snapshot(), reached_turn_limit
+        )
+
+    async def _exchange(
+        self, scenario: Scenario, system: SystemUnderTest, transcript: list[Turn]
+    ) -> bool:
+        """Plays turns into `transcript` until the Simulated User ends the conversation, the
+        agent hands it to a human (ES-1), or the turn limit, a safety stop, is reached.
+        Turns land in `transcript` as they happen, so an interrupted conversation keeps them.
+        Returns whether the turn limit was reached."""
+        user = SimulatedUser(scenario, self._simulator)
         shown: set[str] = set()
         for _ in range(self._turn_limit):
             requests = {request.id: request for request in await system.confirmation_requests()}
@@ -103,25 +164,8 @@ class ScenarioRunner:
                     transcript.append(Turn("customer_channel", f"You {verb} request {request_id}."))
             transcript.append(Turn("customer", move.message))
             if move.ends_conversation:
-                return self._ended(conversation_id, scenario, transcript, system, False)
-            transcript.append(Turn("agent", await system.reply(move.message)))
+                return False
+            transcript.append(await system.reply(move.message))
             if system.bank_snapshot().escalated:
-                return self._ended(conversation_id, scenario, transcript, system, False)
-        return self._ended(conversation_id, scenario, transcript, system, True)
-
-    @staticmethod
-    def _ended(
-        conversation_id: str,
-        scenario: Scenario,
-        transcript: list[Turn],
-        system: SystemUnderTest,
-        reached_turn_limit: bool,
-    ) -> Conversation:
-        return Conversation(
-            conversation_id,
-            scenario,
-            transcript,
-            system.bank_snapshot(),
-            reached_turn_limit,
-            system.hard_rule_refusals(),
-        )
+                return False
+        return True

@@ -1,11 +1,12 @@
 """Scripted stand-ins for the LLMs, so no test ever calls a real model."""
 
-from collections.abc import Callable, Iterable, Sequence
+import itertools
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolCall
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
@@ -29,8 +30,29 @@ def scripted(*messages: AIMessage) -> ScriptedModel:
     return ScriptedModel(messages=iter(messages))
 
 
+def unreachable(error: Exception) -> ScriptedModel:
+    """A model whose provider keeps failing: every call raises `error`."""
+
+    def failing() -> Iterator[AIMessage]:
+        raise error
+        yield
+
+    return ScriptedModel(messages=failing())
+
+
+_call_ids = itertools.count(1)
+
+
 def calls(name: str, **args: Any) -> AIMessage:
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": name}])
+    return AIMessage(content="", tool_calls=[tool_call(name, **args)])
+
+
+def calls_in_parallel(*tool_calls: ToolCall) -> AIMessage:
+    return AIMessage(content="", tool_calls=list(tool_calls))
+
+
+def tool_call(name: str, **args: Any) -> ToolCall:
+    return {"name": name, "args": args, "id": f"call-{next(_call_ids)}", "type": "tool_call"}
 
 
 def says(text: str) -> AIMessage:

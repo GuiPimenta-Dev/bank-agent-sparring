@@ -1,13 +1,17 @@
+from collections.abc import Iterator
 from pathlib import Path
 
+import anthropic
+import httpx2
 import pytest
-from fakes import ScriptedSimulatedUser, calls, says, scripted
+from fakes import ScriptedModel, ScriptedSimulatedUser, calls, says, scripted, unreachable
 from langchain_core.messages import AIMessage
 from mcp import Client
 
-from sparring.agent.support_agent import SupportAgent
+from sparring.agent.support_agent import CAP_REACHED_REPLY, TOOL_CALL_CAP, SupportAgent
 from sparring.bank.domain.card import CardId
 from sparring.evaluation.conversation import ScenarioRunner
+from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.oracle import Oracle
 from sparring.evaluation.recording import InMemoryRecorder
 from sparring.evaluation.scenario import Scenario, load_scenario
@@ -26,11 +30,19 @@ def freeze_debit_card() -> Scenario:
     return load_scenario(CASES / "freeze-active-debit-card.json")
 
 
-def runner(agent_script: list[AIMessage], user: ScriptedSimulatedUser) -> ScenarioRunner:
-    async def connect_agent(client: Client) -> SupportAgent:
-        return await SupportAgent.with_model(client, scripted(*agent_script))
+def runner(
+    agent: list[AIMessage] | ScriptedModel,
+    user: ScriptedSimulatedUser,
+    recorder: InMemoryRecorder | None = None,
+) -> ScenarioRunner:
+    model = scripted(*agent) if isinstance(agent, list) else agent
 
-    return ScenarioRunner(kestrel(connect_agent), user, Oracle(), InMemoryRecorder(), turn_limit=4)
+    async def connect_agent(client: Client) -> SupportAgent:
+        return await SupportAgent.with_model(client, model)
+
+    return ScenarioRunner(
+        kestrel(connect_agent), user, Oracle(), recorder or InMemoryRecorder(), turn_limit=4
+    )
 
 
 async def test_an_agent_that_freezes_the_right_card_passes() -> None:
@@ -269,3 +281,86 @@ async def test_a_missing_escalation_is_a_failure() -> None:
     _, verdict = await runner(agent, user).run(scenario)
 
     assert verdict.differences == ["escalated: expected True, found False"]
+
+
+async def test_an_invariant_violation_is_a_failure_even_when_the_bank_ends_up_right() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Unfreeze my credit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Try again, please.", False),
+            UserMove("Then I want a human.", False),
+        ]
+    )
+    unfreeze = calls("unfreeze_card", card_id="card-ana-credit")
+    agent = [
+        VERIFY,
+        unfreeze,
+        says("Our fraud team froze that card, so I cannot unfreeze it."),
+        calls("unfreeze_card", card_id="card-ana-credit"),
+        says("I'm afraid it is still refused."),
+        ESCALATE,
+        says("A colleague will take over now."),
+    ]
+    scenario = load_scenario(CASES / "unfreeze-fraud-freeze-stays-frozen.json")
+
+    _, verdict = await runner(agent, user).run(scenario)
+
+    assert verdict.differences == []
+    assert [v.invariant for v in verdict.violations] == ["refused_call_repeated"]
+    assert verdict.failed and not verdict.passed
+
+
+async def test_a_turn_past_the_tool_call_cap_is_a_failure_and_the_conversation_goes_on() -> None:
+    user = ScriptedSimulatedUser(
+        [
+            UserMove("Freeze my debit card. C-1001, 1990-05-17, SW1A 1AA.", False),
+            UserMove("Freeze my debit card, please.", False),
+            UserMove("Thanks.", True),
+        ]
+    )
+    agent = [
+        VERIFY,
+        *[calls("list_cards") for _ in range(TOOL_CALL_CAP)],
+        calls("freeze_card", card_id="card-ana-debit"),
+        says("Your debit card is frozen."),
+    ]
+
+    conversation, verdict = await runner(agent, user).run(freeze_debit_card())
+
+    assert conversation.transcript[1].text == CAP_REACHED_REPLY
+    assert verdict.differences == []
+    assert [v.invariant for v in verdict.violations] == ["tool_call_cap"]
+
+
+async def test_an_agent_provider_outage_makes_the_conversation_inconclusive() -> None:
+    user = ScriptedSimulatedUser([UserMove("Freeze my debit card, please.", False)])
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    outage = unreachable(
+        anthropic.InternalServerError(
+            "Overloaded", response=httpx2.Response(529, request=request), body=None
+        )
+    )
+    recorder = InMemoryRecorder()
+
+    conversation, verdict = await runner(outage, user, recorder).run(freeze_debit_card())
+
+    assert verdict.inconclusive and not verdict.failed and not verdict.passed
+    assert conversation.interrupted_by == "Overloaded"
+    assert [turn.speaker for turn in conversation.transcript] == ["customer"]
+    assert recorder.records == [(conversation, verdict)]
+
+
+async def test_a_simulated_user_provider_outage_makes_the_conversation_inconclusive() -> None:
+    def moves() -> Iterator[UserMove]:
+        yield UserMove("Freeze my debit card.", False)
+        raise InfrastructureFailure("OpenAI is unreachable")
+
+    user = ScriptedSimulatedUser(moves())
+
+    conversation, verdict = await runner([says("Sure, please verify first.")], user).run(
+        freeze_debit_card()
+    )
+
+    assert verdict.inconclusive
+    assert conversation.interrupted_by == "OpenAI is unreachable"
+    assert [turn.speaker for turn in conversation.transcript] == ["customer", "agent"]

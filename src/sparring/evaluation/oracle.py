@@ -1,6 +1,5 @@
 import copy
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
@@ -14,12 +13,6 @@ from sparring.evaluation.scenario import BankSnapshot, Intent, Scenario
 
 ESCALATION_THRESHOLD = Money(Decimal("2000.00"))
 UNRECOGNISED_TRANSACTIONS_TO_ESCALATE = 3
-
-
-@dataclass(frozen=True)
-class Verdict:
-    passed: bool
-    differences: list[str]
 
 
 class Oracle:
@@ -60,9 +53,9 @@ class Oracle:
             return copy.deepcopy(scenario.bank)
         return expected
 
-    def judge(self, scenario: Scenario, final: BankSnapshot) -> Verdict:
-        differences = self.expected_outcome(scenario).differences(final)
-        return Verdict(passed=not differences, differences=differences)
+    def differences(self, scenario: Scenario, final: BankSnapshot) -> list[str]:
+        """How the final Bank Snapshot differs from the Expected Outcome; none means correct."""
+        return self.expected_outcome(scenario).differences(final)
 
 
 def _dispute(

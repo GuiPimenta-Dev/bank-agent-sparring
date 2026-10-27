@@ -1,21 +1,33 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
+import openai
 from openai import AsyncOpenAI
 from openai.types.responses import EasyInputMessageParam
 from pydantic import BaseModel, Field
 
+from sparring.evaluation.inconclusive import InfrastructureFailure
 from sparring.evaluation.scenario import Scenario
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    name: str
+    arguments: Mapping[str, Any]
+    refused_by: str | None = None
+    """The Hard Rule that refused the call, if one did."""
 
 
 @dataclass(frozen=True)
 class Turn:
     """One line of a conversation. `customer_channel` lines are what the Customer sees and
-    does in the Kestrel Bank app, outside the chat with the agent."""
+    does in the Kestrel Bank app, outside the chat with the agent. An agent's turn also
+    carries the tool calls it requested, which the Simulated User never sees."""
 
     speaker: Literal["customer", "agent", "customer_channel"]
     text: str
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -27,7 +39,10 @@ class UserMove:
 
 
 class SimulatedUserModel(Protocol):
-    """The pinned LLM behind every Simulated User (ADR-0006, ADR-0013)."""
+    """The pinned LLM behind every Simulated User (ADR-0006, ADR-0013).
+
+    Raises `InfrastructureFailure` when its provider still fails after retries.
+    """
 
     async def next_move(self, instructions: str, transcript: Sequence[Turn]) -> UserMove: ...
 
@@ -85,17 +100,29 @@ class OpenAISimulatedUserModel:
         self._model = model
 
     async def next_move(self, instructions: str, transcript: Sequence[Turn]) -> UserMove:
-        response = await self._client.responses.parse(
-            model=self._model,
-            instructions=instructions,
-            input=[*as_input(transcript)],
-            text_format=_Move,
-        )
+        try:
+            response = await self._client.responses.parse(
+                model=self._model,
+                instructions=instructions,
+                input=[*as_input(transcript)],
+                text_format=_Move,
+            )
+        except openai.APIError as error:
+            if _retries_ran_out(error):
+                raise InfrastructureFailure(str(error)) from error
+            raise
         move = response.output_parsed
         if move is None:
             raise RuntimeError(f"The Simulated User model returned no move: {response.output}")
         decisions = {decision.request_id: decision.confirm for decision in move.decisions}
         return UserMove(move.message, move.ends_conversation, decisions)
+
+
+def _retries_ran_out(error: openai.APIError) -> bool:
+    """Whether the error is one the SDK retries, so it was raised only once retries ran out."""
+    if isinstance(error, openai.APIStatusError):
+        return error.status_code in (408, 409, 429) or error.status_code >= 500
+    return isinstance(error, openai.APIConnectionError)
 
 
 def as_input(transcript: Sequence[Turn]) -> list[EasyInputMessageParam]:

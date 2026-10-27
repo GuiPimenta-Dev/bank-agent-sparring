@@ -1,11 +1,18 @@
 from datetime import UTC, date, datetime
 
+import anthropic
+import httpx2
 import pytest
-from fakes import ScriptedModel, calls, says, scripted
+from fakes import ScriptedModel, calls, calls_in_parallel, says, scripted, tool_call, unreachable
 from langchain_core.messages import AIMessage
 from mcp import Client
 
-from sparring.agent.support_agent import SupportAgent
+from sparring.agent.support_agent import (
+    CAP_REACHED_REPLY,
+    TOOL_CALL_CAP,
+    AgentUnavailable,
+    SupportAgent,
+)
 from sparring.bank.adapters.clock import FixedClock
 from sparring.bank.adapters.in_memory import InMemoryBank
 from sparring.bank.adapters.mcp_server import SessionTokens, build_mcp_server
@@ -97,5 +104,80 @@ async def test_each_turn_reports_the_hard_rules_that_refused_it() -> None:
         )
         second = await agent.reply("conversation-1", "Oh, ok.")
 
-    assert first.hard_rule_refusals == ["FraudFreezeLocked"]
-    assert second.hard_rule_refusals == []
+    assert [(call.name, call.refused_by) for call in first.tool_calls] == [
+        ("verify_identity", None),
+        ("unfreeze_card", "FraudFreezeLocked"),
+    ]
+    assert second.tool_calls == []
+
+
+def kestrel_with_ana() -> tuple[InMemoryBank, Bank]:
+    state = InMemoryBank([ANA], [Card(ANA_DEBIT, ANA.id, "4242")])
+    clock = FixedClock(datetime(2026, 10, 26, 12, 0, tzinfo=UTC))
+    return state, Bank(state.unit_of_work, clock)
+
+
+async def test_the_tool_call_cap_ends_the_turn_before_the_call_that_would_pass_it() -> None:
+    state, bank = kestrel_with_ana()
+    server = build_mcp_server(bank, SessionTokens(b"test-secret"), FixedClock(datetime.now(UTC)))
+    script = [
+        calls(
+            "verify_identity",
+            customer_number="C-1001",
+            date_of_birth="1990-05-17",
+            postcode="SW1A 1AA",
+        ),
+        *[calls("list_cards") for _ in range(TOOL_CALL_CAP - 2)],
+        calls_in_parallel(tool_call("list_cards"), tool_call("freeze_card", card_id=ANA_DEBIT)),
+        says("Anything else I can help with?"),
+    ]
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(client, scripted(*script))
+        capped = await agent.reply("conversation-1", "Freeze my card. C-1001, 1990-05-17, SW1A 1AA")
+        after = await agent.reply("conversation-1", "Hello?")
+
+    assert capped.reply == CAP_REACHED_REPLY
+    assert len(capped.tool_calls) == TOOL_CALL_CAP + 1
+    assert state.state.cards[ANA_DEBIT].frozen_by is None
+    assert after.reply == "Anything else I can help with?"
+
+
+async def test_a_turn_may_use_the_whole_tool_call_cap() -> None:
+    _, bank = kestrel_with_ana()
+    server = build_mcp_server(bank, SessionTokens(b"test-secret"), FixedClock(datetime.now(UTC)))
+    script = [*[calls("list_cards") for _ in range(TOOL_CALL_CAP)], says("Please verify first.")]
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(client, scripted(*script))
+        turn = await agent.reply("conversation-1", "What cards do I have?")
+
+    assert turn.reply == "Please verify first."
+    assert len(turn.tool_calls) == TOOL_CALL_CAP
+
+
+async def test_a_provider_that_still_fails_after_retries_makes_the_agent_unavailable() -> None:
+    _, bank = kestrel_with_ana()
+    server = build_mcp_server(bank, SessionTokens(b"test-secret"), FixedClock(datetime.now(UTC)))
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(
+            client, unreachable(anthropic.APIConnectionError(request=request))
+        )
+        with pytest.raises(AgentUnavailable):
+            await agent.reply("conversation-1", "Hi")
+
+
+async def test_an_error_the_provider_would_not_retry_is_not_an_outage() -> None:
+    _, bank = kestrel_with_ana()
+    server = build_mcp_server(bank, SessionTokens(b"test-secret"), FixedClock(datetime.now(UTC)))
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    bad_request = anthropic.BadRequestError(
+        "Your credit balance is too low", response=httpx2.Response(400, request=request), body=None
+    )
+
+    async with Client(server) as client:
+        agent = await SupportAgent.with_model(client, unreachable(bad_request))
+        with pytest.raises(anthropic.BadRequestError):
+            await agent.reply("conversation-1", "Hi")
