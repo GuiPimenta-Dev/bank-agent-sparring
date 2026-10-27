@@ -1,0 +1,3 @@
+# LangGraph runs the agent loop and is contained inside `agent/`
+
+The support agent's loop is built with LangGraph (checkpointed conversations, streaming, interrupts, native Langfuse callback). To keep the framework from leaking, `langgraph` and `langchain_*` may only be imported inside `agent/` (an `import-linter` contract), and `agent/` exposes its own interface with its own types. `evaluation/` and `bank/` never see LangChain message or tool types, so the framework stays an implementation detail of one adapter rather than the spine of the system. The Simulated User is a plain LLM call, not a graph.

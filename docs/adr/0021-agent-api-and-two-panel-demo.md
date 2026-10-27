@@ -1,0 +1,3 @@
+# Humans use the agent through an API and a single two-panel demo page — no frontend app, no paid hosting
+
+The agent is served by a FastAPI API with SSE streaming, persisting conversations through LangGraph's Postgres checkpointer. One HTML page with no frontend build step, served by the same API, shows two panels side by side: the chat with the agent, and the Customer Channel ("the bank's app") where Pending Actions appear with confirm and reject buttons. That single screen demonstrates the out-of-band Confirmation design (ADR-0004). Everything runs through Docker Compose on the developer's machine; a React app and cloud hosting were rejected as cost and scope a backend/AI portfolio does not need.

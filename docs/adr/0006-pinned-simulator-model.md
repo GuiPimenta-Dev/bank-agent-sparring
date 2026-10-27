@@ -1,0 +1,3 @@
+# The Simulated User's model is pinned; the agent's model is an experiment variable
+
+Scenario Status compares agent versions, so everything else in the loop must hold still. The Simulated User (and the Policy Drift judge) run on an exact, pinned model version that differs from the agent's model, to avoid a simulator that shares the agent's blind spots or cooperates with it. Changing the simulator's model is a rebaseline, not an upgrade: the Golden Set must be re-run on the current agent version before any Regression Check is trusted again. The agent's model, by contrast, is freely swappable and compared across versions by cost per resolved conversation.

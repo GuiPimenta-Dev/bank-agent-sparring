@@ -1,0 +1,3 @@
+# Canonical Cases guard the Oracle, and Policy changes must touch them
+
+The Oracle is the root of truth, so it is verified against Canonical Cases: hand-written Scenarios whose Expected Outcomes a human worked out, covering each Judgment Rule with at least one case where it applies and one near-miss at its boundary. A PR that changes the Policy text must add or change Canonical Cases in the same PR (enforced by a CI check), so the text and the Oracle are reviewed together and Policy Drift is caught before it reaches Exploration. Canonical Cases also serve as executable documentation of the Policy. Property-based testing is deferred until hand-written boundaries prove insufficient.

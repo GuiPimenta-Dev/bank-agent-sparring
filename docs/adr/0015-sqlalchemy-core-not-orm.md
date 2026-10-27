@@ -1,0 +1,3 @@
+# The Postgres adapter uses SQLAlchemy Core and Alembic, not the ORM
+
+The Postgres repositories build queries with SQLAlchemy Core and map rows to aggregates explicitly inside the adapter; Alembic manages migrations. The ORM was rejected even with imperative mapping because it instruments domain classes at runtime (breaking ADR-0014's pure domain in practice) and its lazy loading fails confusingly under async. Raw psycopg was rejected because migrations would need a hand-rolled runner or an extra external tool. The explicit row↔aggregate mapping is exactly what the repository contract suite (ADR-0009) exercises.
