@@ -47,6 +47,12 @@ Failure Signatures by frequency over the last days, with each one's share of the
 uv run --env-file .env sparring-failures --days 7
 ```
 
+Regression Check: the Golden Set against this commit's agent, compared with main's baseline, published as the `regression-check` commit status. A paid run, so only with the user's approval of its cap. See `docs/regression-check.md`:
+
+```bash
+uv run --env-file .env sparring-regression-check --max-cost 2.00
+```
+
 ## Delivering a slice
 
 Each GitHub issue is a vertical slice. A slice is delivered when all of this has happened, in order — it is the end of the work, not an optional step, and needs no separate approval:
