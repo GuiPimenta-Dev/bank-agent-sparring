@@ -1,12 +1,14 @@
 """Exploration: the scheduled search for new Failures, under a hard dollar cap (ADR-0020)."""
 
 import asyncio
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from random import Random
 from typing import Literal
 
+from sparring.evaluation.adaptive_sampling import Weights
 from sparring.evaluation.conversation import ScenarioRunner, Verdict
 from sparring.evaluation.cost import Budget, PriceTable, Usage
 from sparring.evaluation.dimensions import ScenarioDraft, draft, sample_dimensions
@@ -58,6 +60,16 @@ class ExplorationReport:
     """Scenarios left out because the budget could not cover them."""
     spent: Decimal
     cap: Decimal
+    weights: Weights | None = None
+    """The Adaptive Sampling weights the Dimensions were drawn with; None when uniform."""
+
+    def coverage(self) -> dict[str, Counter[str]]:
+        """How many explored Scenarios took each value of each Dimension."""
+        counts: dict[str, Counter[str]] = {}
+        for explored in self.explored:
+            for name, value in explored.dimensions.items():
+                counts.setdefault(name, Counter())[value] += 1
+        return counts
 
     def count(self, outcome: Outcome) -> int:
         return sum(1 for explored in self.explored if explored.outcome == outcome)
@@ -70,7 +82,8 @@ class ExplorationReport:
 
 
 class Exploration:
-    """Generates Scenarios from uniformly sampled Dimensions and runs them concurrently,
+    """Generates Scenarios from sampled Dimensions, uniformly or by Adaptive Sampling
+    weights, and runs them concurrently,
     at most `parallelism` at a time, until the count or the budget runs out. Each Failure
     goes to Promotion, whose Reproductions draw on the same budget."""
 
@@ -88,10 +101,12 @@ class Exploration:
         self._prices = prices
         self._parallelism = parallelism
 
-    async def run(self, run_id: str, count: int, budget: Budget, seed: int) -> ExplorationReport:
+    async def run(
+        self, run_id: str, count: int, budget: Budget, seed: int, weights: Weights | None = None
+    ) -> ExplorationReport:
         random = Random(seed)
         drafts = [
-            draft(f"{run_id}-{index:03d}", sample_dimensions(random), random)
+            draft(f"{run_id}-{index:03d}", sample_dimensions(random, weights), random)
             for index in range(count)
         ]
         explored: list[Explored] = []
@@ -106,7 +121,7 @@ class Exploration:
                 launched += 1
                 group.create_task(self._explore(planned, budget, slots, explored))
         explored.sort(key=lambda e: e.scenario_id)
-        return ExplorationReport(explored, count - launched, budget.spent, budget.cap)
+        return ExplorationReport(explored, count - launched, budget.spent, budget.cap, weights)
 
     async def _explore(
         self,

@@ -7,8 +7,10 @@ from fakes import says, scripted
 from mcp import Client
 
 from sparring.agent.support_agent import SupportAgent
+from sparring.evaluation.adaptive_sampling import Observation, weights
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.cost import Budget, Price, PriceTable, Usage
+from sparring.evaluation.dimensions import every_value
 from sparring.evaluation.exploration import Exploration
 from sparring.evaluation.golden_set import InMemoryGoldenSet
 from sparring.evaluation.inconclusive import InfrastructureFailure
@@ -170,3 +172,16 @@ async def test_failures_found_by_exploration_grow_the_golden_set() -> None:
 
     promoted = {e.scenario_id for e in report.explored if e.promotion == "promoted"}
     assert promoted == {item.scenario.id for item in await golden_set.items()}
+
+
+async def test_the_report_shows_the_weights_used_and_the_coverage_of_each_value() -> None:
+    choices = every_value()
+    tilted = weights([Observation({"operation": "escalate"}, True)] * 30, choices)
+    budget = Budget(cap=Decimal(10), estimate=Decimal("0.10"))
+
+    report = await exploration(Narrator()).run("run", 12, budget, seed=6, weights=tilted)
+
+    assert report.weights is tilted
+    coverage = report.coverage()
+    assert sum(coverage["operation"].values()) == 12
+    assert coverage["operation"]["escalate"] == max(coverage["operation"].values())

@@ -14,14 +14,19 @@ import os
 import random
 import sys
 import uuid
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from mcp import Client
 from openai import AsyncOpenAI
 
 from sparring.agent.support_agent import POLICY, SupportAgent
+from sparring.evaluation.adaptive_sampling import LangfuseObservationLog
+from sparring.evaluation.adaptive_sampling import weights as adaptive_weights
 from sparring.evaluation.conversation import ScenarioRunner
 from sparring.evaluation.cost import Budget, PriceTable, UnpricedModel
+from sparring.evaluation.dimensions import every_value
 from sparring.evaluation.exploration import Exploration, ExplorationReport, typical_conversation
 from sparring.evaluation.golden_set import LangfuseGoldenSet
 from sparring.evaluation.judges import OpenAIPolicyDriftJudge, OpenAIToneJudge
@@ -95,9 +100,31 @@ async def explore(args: argparse.Namespace) -> None:
         prices,
         args.parallelism,
     )
-    report = await exploration.run(run_id, args.scenarios, Budget(args.max_cost, estimate), seed)
+    weights = None
+    if args.window_days:
+        since = datetime.now(UTC) - timedelta(days=args.window_days)
+        observed = await LangfuseObservationLog(langfuse).observations(since)
+        weights = adaptive_weights(observed, every_value())
+        print(
+            f"Adaptive Sampling over {len(observed)} conversations "
+            f"of the last {args.window_days} days."
+        )
+    budget = Budget(args.max_cost, estimate)
+    report = await exploration.run(run_id, args.scenarios, budget, seed, weights)
     langfuse.flush()
     print_report(report)
+
+
+def print_coverage(report: ExplorationReport) -> None:
+    """Each Dimension value's probability, when adaptive, and how many Scenarios took it."""
+    coverage = report.coverage()
+    print("\nCoverage per Dimension value" + (" (weight)" if report.weights else "") + ":")
+    for name, values in every_value().items():
+        cells: list[str] = []
+        for value in values:
+            weight = f" ({report.weights[name][value]:.0%})" if report.weights else ""
+            cells.append(f"{value} {coverage.get(name, Counter[str]())[value]}{weight}")
+        print(f"  {name}: {', '.join(cells)}")
 
 
 def print_report(report: ExplorationReport) -> None:
@@ -118,6 +145,7 @@ def print_report(report: ExplorationReport) -> None:
     per_resolved = report.cost_per_resolved_conversation
     if per_resolved is not None:
         print(f"Cost per resolved conversation: ${per_resolved:.4f}.")
+    print_coverage(report)
 
 
 def main() -> None:
@@ -129,6 +157,12 @@ def main() -> None:
     parser.add_argument("--parallelism", type=int, default=4, help="Conversations at once.")
     parser.add_argument(
         "--seed", type=int, help="Seeds the Dimension sampling; random when left out."
+    )
+    parser.add_argument(
+        "--window-days",
+        type=int,
+        default=7,
+        help="Adaptive Sampling from this many days of Failures; 0 samples uniformly.",
     )
     parser.add_argument("--yes", action="store_true", help="Start without asking.")
     args = parser.parse_args()
