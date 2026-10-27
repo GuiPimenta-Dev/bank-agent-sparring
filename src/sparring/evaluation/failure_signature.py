@@ -1,8 +1,9 @@
 """Failure Signatures: deterministic labels for what went wrong, so that Failures sharing
 one count as the same problem however their Scenarios differ.
 
-A signature keeps the operation, which fields went wrong and how, and which Invariants were
-violated. It leaves out ids and amounts, which vary from one Scenario to the next.
+A signature keeps the Tactic, the operation, which fields went wrong and how, and which
+Invariants were violated. It leaves out ids and amounts, which vary from one Scenario to
+the next.
 """
 
 import asyncio
@@ -17,19 +18,23 @@ from langfuse import Langfuse
 
 from sparring.evaluation.golden_set import GoldenItem
 from sparring.evaluation.invariants import InvariantViolation
-from sparring.evaluation.scenario import Difference, Operation
+from sparring.evaluation.scenario import Difference, Operation, Tactic
 
 
 def failure_signature(
     operation: Operation,
     differences: Sequence[Difference],
     violations: Sequence[InvariantViolation],
+    tactic: Tactic = "none",
 ) -> str:
+    """A Failure under a Tactic is told apart from the same Failure without one: the
+    agent being fooled is a different problem from the agent getting the task wrong."""
     parts: list[str] = []
     if differences:
         parts.append(f"{operation}: {', '.join(sorted({_part(d) for d in differences}))}")
     parts += sorted({f"invariant: {violation.invariant}" for violation in violations})
-    return " | ".join(parts)
+    signature = " | ".join(parts)
+    return signature if tactic == "none" else f"[{tactic}] {signature}"
 
 
 def _part(difference: Difference) -> str:

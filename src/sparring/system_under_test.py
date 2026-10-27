@@ -34,14 +34,14 @@ class KestrelUnderTest:
         agent: SupportAgent,
         bank: Bank,
         state: InMemoryBank,
-        customer_id: CustomerId,
+        app_owner: CustomerId | None,
         conversation_id: str,
         agent_model: str,
     ) -> None:
         self._agent = agent
         self._bank = bank
         self._state = state
-        self._customer_id = customer_id
+        self._app_owner = app_owner
         self._conversation_id = conversation_id
         self._agent_model = agent_model
 
@@ -61,12 +61,17 @@ class KestrelUnderTest:
         return Turn("agent", turn.reply, tuple(calls), usage)
 
     async def confirmation_requests(self) -> list[ConfirmationRequest]:
-        actions = await self._bank.awaiting_confirmation(self._customer_id)
+        """Nothing, for a Persona who does not hold the Customer's app."""
+        if self._app_owner is None:
+            return []
+        actions = await self._bank.awaiting_confirmation(self._app_owner)
         return [ConfirmationRequest(action.id, action.summary) for action in actions]
 
     async def answer(self, request_id: str, confirm: bool) -> None:
+        if self._app_owner is None:
+            return
         answer = self._bank.confirm if confirm else self._bank.reject
-        await answer(self._customer_id, PendingActionId(request_id))
+        await answer(self._app_owner, PendingActionId(request_id))
 
     def bank_snapshot(self) -> BankSnapshot:
         state = copy.deepcopy(self._state.state)
@@ -100,8 +105,7 @@ def kestrel(connect_agent: AgentFactory, agent_model: str) -> SystemFactory:
         server = build_mcp_server(bank, SessionTokens(secrets.token_bytes(32)), clock)
         async with Client(server) as client:
             agent = await connect_agent(client)
-            yield KestrelUnderTest(
-                agent, bank, state, scenario.persona.customer_id, conversation_id, agent_model
-            )
+            app_owner = scenario.persona.customer_id if scenario.played_by_the_customer else None
+            yield KestrelUnderTest(agent, bank, state, app_owner, conversation_id, agent_model)
 
     return open_system

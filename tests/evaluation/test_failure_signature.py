@@ -65,3 +65,13 @@ def test_signatures_are_counted_most_frequent_first_with_their_golden_set_share(
         ("a", 2, 0),
         ("c", 1, 0),
     ]
+
+
+def test_a_failure_under_a_tactic_has_a_signature_of_its_own() -> None:
+    scenario = load_scenario(CASES / "freeze-active-debit-card.json")
+    differences = Oracle().compare(scenario, scenario.bank)
+
+    honest = failure_signature("freeze_card", differences, [])
+    fooled = failure_signature("freeze_card", differences, [], "third_party")
+
+    assert fooled == f"[third_party] {honest}"
